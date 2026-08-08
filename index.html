@@ -1,0 +1,1892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BTC/ETH Quant Paper Trading Terminal</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #000;
+    --panel: rgba(255,255,255,0.035);
+    --panel-2: rgba(255,255,255,0.06);
+    --border: rgba(255,255,255,0.08);
+    --border-hi: rgba(134,201,138,0.30);
+    --ink: #f4f4fa;
+    --ink-2: #c9c8da;
+    --muted: #8f8ea8;
+    --grid: rgba(255,255,255,0.06);
+    --vio: #93c88a; --vio-2: #b0d9a5;
+    --pink: #c9d64f; --blue: #82c98f; --orange: #d3c95e; --green: #7ecf8a; --red: #e0806e; --gold: #c9d64f; --teal: #8ad6b0;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #050609; color: var(--ink); min-height: 100vh; }
+  #universe { position: fixed; inset: 0; z-index: 0; background: radial-gradient(ellipse at 50% 38%, #0a0c13, #050609 72%); }
+  #universe canvas { width: 100%; height: 100%; display: block; }
+  #uvVignette { position: absolute; inset: 0; pointer-events: none; background:
+    radial-gradient(ellipse at 18% 22%, rgba(120,150,255,.04), transparent 55%),
+    radial-gradient(ellipse at 84% 78%, rgba(94,234,212,.03), transparent 55%),
+    radial-gradient(ellipse at 50% 50%, transparent 58%, rgba(0,0,0,.55) 100%); }
+  .shell { display: flex; min-height: 100vh; position: relative; z-index: 1; pointer-events: none; }
+  .topbar, .tabs, .banner, .card, .chip, footer { pointer-events: auto; }
+  main { flex: 1; padding: 22px 36px 40px; min-width: 0; }
+  .topbar { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; flex-wrap: wrap; }
+  .topbar h1 { font-size: 16px; font-weight: 650; }
+  .topbar .sub { font-size: 11.5px; color: var(--muted); }
+  .conn { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--ink-2);
+    padding: 6px 13px; border-radius: 999px; border: none; background: rgba(255,255,255,.07);
+    backdrop-filter: blur(14px) brightness(1.3); box-shadow: inset 0 1px 0 rgba(255,255,255,.14); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 8px currentColor; }
+  .dot.ok { background: var(--green); color: var(--green); } .dot.err { background: var(--red); color: var(--red); }
+
+  .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+  .tab-btn {
+    padding: 9px 22px; border-radius: 999px; border: none; background: rgba(255,255,255,.07);
+    color: var(--ink-2); font-size: 13px; font-weight: 650; cursor: pointer;
+    backdrop-filter: blur(14px) brightness(1.3); -webkit-backdrop-filter: blur(14px) brightness(1.3);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.14);
+  }
+  .tab-btn.on {
+    background: linear-gradient(135deg, #93ce93, #5da96f); color: #0c130d; border-color: var(--border-hi);
+    box-shadow: 0 0 18px rgba(134,201,138,.35);
+  }
+  .tab-btn .mini { font-size: 10px; opacity: .75; font-weight: 500; margin-left: 6px; }
+  .page { display: none; }
+  .page.on { display: block; }
+
+  .card {
+    --glow: var(--vio);
+    background: linear-gradient(150deg,
+      color-mix(in srgb, var(--glow) 5%, rgba(255,255,255,.085)),
+      rgba(16,18,16,.46) 55%,
+      color-mix(in srgb, var(--glow) 2%, rgba(255,255,255,.04)));
+    border: none; border-radius: 22px; padding: 18px 20px; position: relative;
+    backdrop-filter: blur(16px) saturate(160%) brightness(1.32);
+    -webkit-backdrop-filter: blur(16px) saturate(160%) brightness(1.32);
+    box-shadow:
+      0 18px 60px rgba(0,0,0,.45),
+      0 0 80px color-mix(in srgb, var(--glow) 5%, transparent),
+      inset 0 1px 0 rgba(255,255,255,.14),
+      inset 0 -1px 0 color-mix(in srgb, var(--glow) 8%, rgba(255,255,255,.04));
+  }
+  .card::before {
+    content: ""; position: absolute; inset: 0; border-radius: 22px; pointer-events: none;
+    background: linear-gradient(165deg, rgba(255,255,255,.09) 0%, rgba(255,255,255,0) 30%, rgba(255,255,255,0) 72%, rgba(255,255,255,.045) 100%);
+  }
+  .card.g-vio    { --glow: var(--vio); }
+  .card.g-blue   { --glow: var(--blue); }
+  .card.g-green  { --glow: var(--green); }
+  .card.g-orange { --glow: var(--orange); }
+  .card.g-pink   { --glow: var(--pink); }
+  .card.g-red    { --glow: var(--red); }
+  .card.g-gold   { --glow: var(--gold); }
+  .card.g-teal   { --glow: var(--teal); }
+  .card h2 { font-size: 12.5px; font-weight: 650; color: var(--ink-2); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; letter-spacing: .02em; flex-wrap: wrap; }
+  .card h2 .tag { font-size: 10px; color: var(--muted); font-weight: 500; }
+  .legend { display: flex; gap: 13px; font-size: 11px; color: var(--ink-2); margin-left: auto; }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; vertical-align: -1px; margin-right: 5px; }
+
+  .chips { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .chip { display: flex; align-items: center; gap: 12px;
+    background: linear-gradient(150deg,
+      color-mix(in srgb, var(--c) 6%, rgba(255,255,255,.085)),
+      rgba(16,18,16,.44) 55%,
+      color-mix(in srgb, var(--c) 2%, rgba(255,255,255,.04)));
+    border: none; border-radius: 20px; padding: 14px 15px;
+    backdrop-filter: blur(16px) saturate(160%) brightness(1.3);
+    -webkit-backdrop-filter: blur(16px) saturate(160%) brightness(1.3);
+    box-shadow: 0 14px 44px rgba(0,0,0,.4), 0 0 60px color-mix(in srgb, var(--c) 5%, transparent),
+      inset 0 1px 0 rgba(255,255,255,.14); }
+  .chip .ring {
+    width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; font-size: 17px; flex-shrink: 0;
+    background: radial-gradient(circle at 32% 28%, rgba(255,255,255,.22), transparent 55%), var(--c);
+    box-shadow: 0 0 16px color-mix(in srgb, var(--c) 55%, transparent);
+  }
+  .chip .k { font-size: 10.5px; color: var(--muted); margin-bottom: 3px; }
+  .chip .v { font-size: 16.5px; font-weight: 700; line-height: 1.1; }
+  .chip .d { font-size: 10px; color: var(--ink-2); margin-top: 2px; }
+  .up { color: var(--green); } .down { color: var(--red); }
+
+  .layout { display: grid; grid-template-columns: 1fr 300px; gap: 12px; }
+  @media (max-width: 1080px) { .layout { grid-template-columns: 1fr; } }
+  .col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+  .chart-box { position: relative; }
+  .chart-box svg { display: block; width: 100%; }
+  .tt { position: absolute; pointer-events: none; background: rgba(20,20,34,.92); border: 1px solid var(--border-hi);
+    border-radius: 8px; padding: 7px 11px; font-size: 11px; color: var(--ink-2); display: none; z-index: 5; white-space: nowrap;
+    backdrop-filter: blur(8px); box-shadow: 0 6px 20px rgba(0,0,0,.5); }
+  .tt b { color: #fff; font-variant-numeric: tabular-nums; }
+
+  .params { display: grid; grid-template-columns: 1fr auto; gap: 7px 12px; font-size: 12px; }
+  .params .k { color: var(--muted); } .params .v { color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; }
+  .lev-row { display: flex; gap: 6px; margin-bottom: 8px; }
+  .lev-btn { flex: 1; padding: 8px 0; text-align: center; border-radius: 9px; border: 1px solid var(--border);
+    background: var(--panel-2); color: var(--ink-2); font-size: 12.5px; cursor: pointer; font-weight: 650; }
+  .lev-btn.on { background: linear-gradient(135deg, #93ce93, #5da96f); color: #0c130d; border-color: var(--border-hi);
+    box-shadow: 0 0 16px rgba(134,201,138,.35); }
+  .lev-note { font-size: 10.5px; color: var(--muted); line-height: 1.5; margin-bottom: 10px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: right; color: var(--muted); font-weight: 500; font-size: 10.5px; padding: 6px 9px; border-bottom: 1px solid var(--grid); letter-spacing: .04em; }
+  th:first-child, td:first-child { text-align: left; }
+  td { padding: 8px 9px; border-bottom: 1px solid var(--grid); text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+  td:first-child { color: var(--ink); }
+  tr.ref td { opacity: .45; }
+  tr.open-row td { background: rgba(134,201,138,.08); }
+  .pill { padding: 2.5px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 650; }
+  .pill.win { background: rgba(52,211,153,.14); color: var(--green); }
+  .pill.loss { background: rgba(248,113,113,.14); color: var(--red); }
+  .pill.live { background: rgba(134,201,138,.16); color: var(--green); }
+  .pill.refp { background: var(--panel-2); color: var(--muted); }
+  .pill.tealp { background: rgba(45,212,191,.15); color: var(--teal); }
+  .pill.goldp { background: rgba(251,191,36,.15); color: var(--gold); }
+
+  .banner { border: 1px solid var(--border); border-radius: 13px; padding: 11px 15px; font-size: 12px; margin-bottom: 12px; display: none; backdrop-filter: blur(12px); }
+  .banner.warn { display: block; background: rgba(251,191,36,.08); color: var(--gold); border-color: rgba(251,191,36,.3); }
+  .banner.err  { display: block; background: rgba(248,113,113,.10); color: var(--red); border-color: rgba(248,113,113,.3); }
+  .loading { text-align: center; color: var(--muted); padding: 80px 0; font-size: 13px; }
+  .gauge-wrap { display: flex; flex-direction: column; align-items: center; padding: 4px 0 2px; }
+  .gauge-val { font-size: 26px; font-weight: 750; margin-top: -46px; }
+  .gauge-sub { font-size: 10.5px; color: var(--muted); margin-top: 2px; text-align: center; line-height: 1.5; }
+  .donut-wrap { display: flex; align-items: center; gap: 16px; }
+  .donut-leg { font-size: 11.5px; color: var(--ink-2); display: flex; flex-direction: column; gap: 7px; }
+  .donut-leg i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .sys-box { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; background: rgba(255,255,255,0.025); margin-bottom: 10px; }
+  .sys-box .nm { font-size: 12.5px; font-weight: 650; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .acct-stats { display: flex; gap: 20px; flex-wrap: wrap; align-items: baseline; margin-bottom: 12px; }
+  .acct-stats .big { font-size: 20px; font-weight: 700; }
+  .acct-stats .lbl { font-size: 10.5px; color: var(--muted); }
+  footer { color: var(--muted); font-size: 10.5px; line-height: 1.65; margin-top: 14px; }
+  .gtiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); gap: 8px; margin-bottom: 12px; }
+  .gtile { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; background: rgba(255,255,255,.02); font-size: 10.5px; color: var(--ink-2); line-height: 1.5; }
+  .gtile .gid { font-weight: 700; font-size: 11px; color: var(--ink); }
+  .gtile.live { border-color: rgba(52,211,153,.45); box-shadow: 0 0 10px rgba(52,211,153,.15); }
+  .hrow { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--ink-2); }
+  .hrow .lb { min-width: 96px; color: var(--muted); }
+  .hrow .pv { min-width: 76px; text-align: right; font-variant-numeric: tabular-nums; }
+  .hbar { height: 8px; border-radius: 99px; background: rgba(255,255,255,.09); overflow: hidden; position: relative; flex: 1; }
+  .hbar i { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 99px; display: block;
+    background: linear-gradient(90deg, #8fd694, #c9d64f); }
+  .segbar { display: flex; height: 10px; border-radius: 99px; overflow: hidden; gap: 2px; }
+  .segbar i { display: block; height: 100%; }
+  @media (max-width: 760px) {
+    main { padding: 14px 12px 30px; }
+    .topbar h1 { font-size: 14px; }
+    .tabs { flex-wrap: wrap; }
+    .tab-btn { padding: 8px 13px; font-size: 12px; }
+    .tab-btn .mini { display: none; }
+    #heroSky { height: 46vh !important; min-height: 300px !important; }
+    .card { padding: 14px 14px; border-radius: 18px; }
+    .chip .ring { width: 36px; height: 36px; font-size: 14px; }
+    .chip .v { font-size: 14.5px; }
+    .hrow .lb { min-width: 68px; font-size: 10px; }
+    .hrow .pv { min-width: 58px; font-size: 10px; }
+    .legend { display: none; }
+    #heroSky > div:nth-child(2), #heroSky > div:nth-child(3) { display: none; }
+  }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+<div id="universe">
+  <canvas id="galaxy"></canvas>
+  <div id="uvVignette"></div>
+  <div id="gLabels" style="position:absolute;inset:0;pointer-events:none;overflow:hidden"></div>
+  <div class="tt" id="gTip"></div>
+</div>
+<div class="shell">
+  <main>
+    <div class="topbar">
+      <div>
+        <h1>BTC/ETH Quant Paper Trading Terminal</h1>
+        <div class="sub">Paper Trading · Live Binance data · 30s refresh · All strategies finalized via backtest + sensitivity checks</div>
+      </div>
+      <div class="conn"><span class="dot" id="connDot"></span><span id="connTxt">Connecting…</span></div>
+    </div>
+
+    <div class="banner" id="errBanner"></div>
+    <div class="banner" id="skimBanner"></div>
+
+    <div class="tabs" id="tabs" style="display:none">
+      <button class="tab-btn on" data-p="0">Overview<span class="mini">All systems + Arena</span></button>
+      <button class="tab-btn" data-p="1">Strategy 1 · Pulse Grid<span class="mini">Aggressive · Futures 3x</span></button>
+      <button class="tab-btn" data-p="2">Strategy 2 · Trend Combo<span class="mini">Stable · Spot 1x</span></button>
+    </div>
+
+    <div id="app" class="loading">Loading history from Binance and replaying all strategies…</div>
+  </main>
+</div>
+
+<template id="tpl">
+<div class="page on" id="page0">
+  <div class="chips">
+    <div class="chip" style="--c:var(--blue)"><div class="ring">₿</div><div><div class="k">BTC / USDT</div><div class="v" id="ovPrice">–</div><div class="d" id="ovPriceD">–</div></div></div>
+    <div class="chip" style="--c:var(--vio)"><div class="ring">1</div><div><div class="k">Strategy 1 · Pulse Grid</div><div class="v" id="ovS1Eq">–</div><div class="d" id="ovS1St">–</div></div></div>
+    <div class="chip" style="--c:var(--teal)"><div class="ring">2</div><div><div class="k">Strategy 2 · Trend Combo</div><div class="v" id="ovS2Eq">–</div><div class="d" id="ovS2St">–</div></div></div>
+    <div class="chip" style="--c:var(--gold)"><div class="ring">⚔</div><div><div class="k">Arena</div><div class="v" id="ovAGen" style="font-size:13px">Loading…</div><div class="d" id="ovATop">–</div></div></div>
+  </div>
+
+  <div id="heroSky" style="height:58vh;min-height:400px;position:relative;margin-bottom:14px">
+    <div style="position:absolute;top:18px;left:6px">
+      <div style="font:600 11px system-ui;letter-spacing:.44em;color:rgba(244,244,250,.88)">ENERGY&nbsp;CORE</div>
+      <div style="font:500 10px system-ui;letter-spacing:.2em;color:var(--muted);margin-top:5px">Flow-field particle turbulence · 500-gene pool × 20 active</div>
+    </div>
+    <div style="position:absolute;bottom:12px;left:6px;font:500 9.5px system-ui;letter-spacing:.24em;color:var(--muted)">Scroll wheel · zoom&nbsp;&nbsp;&middot;&nbsp;&nbsp;Page scroll · camera push&nbsp;&nbsp;&middot;&nbsp;&nbsp;Hover a gene · view profile</div>
+    <div style="position:absolute;bottom:12px;right:6px;font:500 9.5px system-ui;letter-spacing:.18em;color:var(--muted)"><span style="color:var(--green)">&#9679;</span> Profit&nbsp;&nbsp;<span style="color:var(--red)">&#9679;</span> Loss&nbsp;&nbsp;<span style="color:var(--gold)">&#9675;</span> Forward Top 5&nbsp;&nbsp;<span style="color:var(--teal)">&#9675;</span> In position</div>
+  </div>
+
+  <div class="card g-gold">
+    <h2>Arena · Top 5 Summary <span class="tag" id="ovALoad">Loading arena data in background…</span>
+      <span class="legend" style="margin-left:auto"><span><i style="background:var(--green);border-radius:50%"></i>Profit</span><span><i style="background:var(--red);border-radius:50%"></i>Loss</span><span><i style="background:var(--gold);border-radius:50%"></i>Forward Top 5</span><span><i style="background:var(--teal);border-radius:50%"></i>In position</span><span><i style="background:rgba(167,139,250,.35);border-radius:50%"></i>Gene-pool dust</span></span>
+    </h2>
+    <div style="overflow-x:auto">
+    <table>
+      <thead><tr><th>#</th><th>Gene</th><th>TF</th><th>Forward equity</th><th style="min-width:110px"></th><th>Trades</th><th>Status</th></tr></thead>
+      <tbody id="ovTop5"><tr><td colspan="6" style="text-align:center;color:var(--muted)">–</td></tr></tbody>
+    </table>
+    </div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:8px">Full leaderboard, evolution log, and rules live on the standalone Arena page (authoritative); this summary view shares the same data and seed, syncing about every 10 minutes.</div>
+  </div>
+
+  <div class="card g-blue" id="healthCard">
+    <h2>System Health <span class="tag" id="hcOverall">Initializing…</span></h2>
+    <div class="gtiles" id="hcItems" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))"></div>
+  </div>
+
+  <div class="layout">
+    <div class="col">
+      <div class="card g-vio">
+        <h2>Strategy 1 · Pulse Grid <span class="tag">Futures 3x · Aggressive</span></h2>
+        <div class="params" id="ovS1Box"></div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card g-teal">
+        <h2>Strategy 2 · Trend Combo <span class="tag">Spot 1x · Stable</span></h2>
+        <div class="params" id="ovS2Box"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="page" id="page1">
+  <div class="chips">
+    <div class="chip" style="--c:var(--blue)"><div class="ring">₿</div><div><div class="k">BTC / USDT</div><div class="v" id="tPrice">–</div><div class="d" id="tPriceD">–</div></div></div>
+    <div class="chip" style="--c:var(--pink)"><div class="ring">↯</div><div><div class="k">24H Change</div><div class="v" id="tDrop">–</div><div class="d" id="tDropD">–</div></div></div>
+    <div class="chip" style="--c:var(--vio)"><div class="ring">◉</div><div><div class="k">Strategy Status</div><div class="v" id="tState" style="font-size:13px">–</div><div class="d" id="tStateD">–</div></div></div>
+    <div class="chip" style="--c:var(--green)"><div class="ring">$</div><div><div class="k">Strategy 1 Equity</div><div class="v" id="tEq">–</div><div class="d">Start $5,000 · 2026-08-07</div></div></div>
+    <div class="chip" style="--c:var(--orange)"><div class="ring">Σ</div><div><div class="k">Cumulative Return</div><div class="v" id="tRet">–</div><div class="d" id="tRetD">–</div></div></div>
+  </div>
+
+  <div class="layout">
+    <div class="col">
+      <div class="card g-vio">
+        <h2>BTC Price · Last 60 Days <span class="tag" id="gridTag"></span>
+          <span class="legend"><span><i style="background:var(--vio-2)"></i>Price</span><span><i style="background:var(--orange)"></i>Trigger</span><span><i style="background:var(--green)"></i>Entry</span></span>
+        </h2>
+        <div class="chart-box" id="priceChart"></div>
+      </div>
+      <div class="card g-green">
+        <h2>Strategy 1 Equity Curve <span class="tag">Closed trades + open P&L</span></h2>
+        <div class="chart-box" id="eqChart"></div>
+      </div>
+      <div class="card g-red">
+        <h2>Strategy 1 Trade Log <span class="tag">Gray = pre-launch signal replay ($5,000/trade reference)</span></h2>
+        <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>Trigger date</th><th>Entry price</th><th>Status</th><th>Duration</th><th>Fills</th><th>Return</th><th>Account P&L</th></tr></thead>
+          <tbody id="logBody"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card g-orange">
+        <h2>Trigger Progress <span class="tag">-8% trigger line</span></h2>
+        <div class="gauge-wrap">
+          <div id="gauge"></div>
+          <div class="gauge-val" id="gaugeVal">–</div>
+          <div class="gauge-sub" id="gaugeSub">–</div>
+        </div>
+      </div>
+      <div class="card g-blue">
+        <h2>Current Grid Position</h2>
+        <div id="posBody" style="font-size:12px;color:var(--ink-2)">–</div>
+      </div>
+      <div class="card g-pink">
+        <h2>Signal Win Rate <span class="tag">Past year incl. replay</span></h2>
+        <div class="donut-wrap"><div id="donut"></div><div class="donut-leg" id="donutLeg"></div></div>
+      </div>
+      <div class="card g-gold">
+        <h2>Parameters & Leverage</h2>
+        <div class="lev-row" id="levRow"></div>
+        <div class="lev-note" id="levNote"></div>
+        <div class="params" id="paramGrid"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="page" id="page2">
+  <div class="chips">
+    <div class="chip" style="--c:var(--blue)"><div class="ring">₿</div><div><div class="k">BTC / USDT</div><div class="v" id="p2Btc">–</div><div class="d" id="p2BtcD">–</div></div></div>
+    <div class="chip" style="--c:var(--vio)"><div class="ring">Ξ</div><div><div class="k">ETH / USDT</div><div class="v" id="p2Eth">–</div><div class="d" id="p2EthD">–</div></div></div>
+    <div class="chip" style="--c:var(--teal)"><div class="ring">$</div><div><div class="k">BTC Trend Combo Account</div><div class="v" id="s2BtcEq">–</div><div class="d">Start $5,000 (SR $2,500 + MA $2,500)</div></div></div>
+    <div class="chip" style="--c:var(--green)"><div class="ring">$</div><div><div class="k">ETH MA Standalone Account</div><div class="v" id="s2EthEq">–</div><div class="d">Start $5,000 · MA 10/150</div></div></div>
+    <div class="chip" style="--c:var(--orange)"><div class="ring">Σ</div><div><div class="k">Strategy 2 Total Return</div><div class="v" id="s2TotRet">–</div><div class="d">Both accounts combined · Start $10,000</div></div></div>
+  </div>
+
+  <div class="layout">
+    <div class="col">
+      <div class="card g-teal">
+        <h2>BTC Trend Combo <span class="tag">Active · Spot 1x · Separately booked</span></h2>
+        <div id="s2SrBox" class="sys-box">–</div>
+        <div id="s2MaBox" class="sys-box">–</div>
+      </div>
+      <div class="card g-green">
+        <h2>ETH · MA 10/150 <span class="tag">Active · Standalone $5,000 account · ETH overall champion params (#1 of 109-combo sweep)</span></h2>
+        <div id="s2EthBox" class="sys-box" style="margin-bottom:0">–</div>
+      </div>
+      <div class="card g-red">
+        <h2>Strategy 2 Trade Log <span class="tag">Active three systems only · Gray = pre-launch replay · Watchlist records in card at right</span></h2>
+        <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>System</th><th>Entry</th><th>Exit</th><th>Entry price</th><th>Exit price</th><th>Return</th></tr></thead>
+          <tbody id="s2Log"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card g-gold">
+        <h2>Watchlist <span class="tag">$2,500 virtual each · Not booked to accounts · Out-of-sample tryout</span></h2>
+        <div style="font-size:11px;color:var(--muted);line-height:1.6;margin-bottom:10px">
+          Three candidates run in parallel for 3–6 months; promotion requires out-of-sample results clearly beating the incumbent. Backtest champion ≠ live champion.
+        </div>
+        <div id="watchList">–</div>
+      </div>
+      <div class="card g-vio">
+        <h2>Strategy 2 Rule Card</h2>
+        <div class="params">
+          <div class="k">BTC StochRSI</div><div class="v">(14,14,3,5) weekly</div>
+          <div class="k">Entry/Exit</div><div class="v">Buy on K crossing above D / sell on K crossing below D</div>
+          <div class="k">Disaster SL</div><div class="v">Entry price -20%</div>
+          <div class="k">BTC MA</div><div class="v">10/150 daily golden/death cross</div>
+          <div class="k">ETH MA</div><div class="v">10/150 daily golden/death cross</div>
+          <div class="k">Execution</div><div class="v">Close-confirmed · Spot · No leverage</div>
+          <div class="k">Conservative annualized target</div><div class="v">21%–25%</div>
+          <div class="k">Backtest drawdown (combo)</div><div class="v">-25% ~ -46%</div>
+          <div class="k">Discipline</div><div class="v">Never add leverage · Never change parameters</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Paper trading on public Binance market data — no real funds or API keys. Strategy 1 Pulse Grid (futures 3x): best parameters from a 270-combo sensitivity sweep; conservative ~25% annualized; a single stop-loss incident ~ -25%~-31%. Strategy 2 Trend Combo (spot 1x): BTC StochRSI + MA at $2,500 each and ETH MA $5,000, booked separately; backtest conservative annualized 21%–25%; leverage experiments confirm 1x is optimal. Watchlist candidates (B: StochRSI(1,2,19,14) sweep champion / C: ROC 4-week momentum / D: RSI weekly >50) are virtual positions, not booked to accounts, promoted only on out-of-sample performance. Past performance does not guarantee future results; skim profits at the 2x account threshold. Research tool only. Not investment advice.
+</footer>
+</template>
+
+<script>
+"use strict";
+/* ================= Config ================= */
+const CFG = {
+  capital0: 5000,
+  lev: 3,
+  step: 0.008, rangePct: 0.10, slBuf: 0.03,
+  fee: 0.0004, slip: 0.003, fundingHr: 0.0000125,
+  maxDurH: 30 * 24,
+  trigDrop: -0.08, waitH: 6, stabMult: 1.01,
+  ACCOUNT_START: Date.UTC(2026, 7, 7),
+  REPLAY_START: Date.UTC(2025, 7, 1),
+  S2_DAILY_START: Date.UTC(2024, 0, 1),
+  SR_CAP: 2500, MA_CAP: 2500, ETH_CAP: 5000, CAND_CAP: 2500,
+  S2_SL: 0.20,
+  SPOT_FEE: 0.00125,
+};
+const LEVS = [1, 2, 3, 5];
+const LEV_RISK = { 1: "No leverage · Most stable", 2: "Conservative · Zero liquidations across the full sweep", 3: "Recommended full position · One SL incident ~ -25%~-31% · Conservative ~25% annualized", 5: "Aggressive · Half position advised · One SL incident ~ -43%~-45% · Conservative ~41% annualized" };
+let state = { data: [], daily: null, ethDaily: null, price: null, priceEth: null, lev: CFG.lev, timer: null };
+
+/* ================= Data ================= */
+async function fetchKlines(startMs) {
+  let rows = [], t = startMs;
+  for (let i = 0; i < 12; i++) {
+    const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&startTime=${t}&limit=1000`).then(x => x.json());
+    if (!Array.isArray(r) || r.length === 0) break;
+    for (const k of r) rows.push([k[0], +k[1], +k[2], +k[3], +k[4]]);
+    if (r.length < 1000) break;
+    t = r[r.length - 1][6] + 1;
+  }
+  return rows;
+}
+async function refreshTail() {
+  const d = state.data;
+  const t = d.length ? d[d.length - 1][0] : CFG.REPLAY_START;
+  const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&startTime=${t}&limit=1000`).then(x => x.json());
+  if (Array.isArray(r)) for (const k of r) {
+    const row = [k[0], +k[1], +k[2], +k[3], +k[4]];
+    if (d.length && d[d.length - 1][0] === row[0]) d[d.length - 1] = row; else d.push(row);
+  }
+  const tk = await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT").then(x => x.json());
+  state.price = { last: +tk.lastPrice, pct: +tk.priceChangePercent, high: +tk.highPrice, low: +tk.lowPrice };
+  const tk2 = await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=ETHUSDT").then(x => x.json());
+  state.priceEth = { last: +tk2.lastPrice, pct: +tk2.priceChangePercent };
+  const dr = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&startTime=${CFG.S2_DAILY_START}&limit=1000`).then(x => x.json());
+  if (Array.isArray(dr)) state.daily = dr.map(k => [k[0], +k[1], +k[2], +k[3], +k[4]]);
+  const er = await fetch(`https://api.binance.com/api/v3/klines?symbol=ETHUSDT&interval=1d&startTime=${CFG.S2_DAILY_START}&limit=1000`).then(x => x.json());
+  if (Array.isArray(er)) state.ethDaily = er.map(k => [k[0], +k[1], +k[2], +k[3], +k[4]]);
+}
+
+/* ================= Strategy 1 engine (matches backtest) ================= */
+function simGrid(data, i0, i1Max, o) {
+  let wallet = o.capital, cells = null, L = null, nL = 0, cellQ = 0;
+  let slHit = false, liq = false, fills = 0, minEq = o.capital, endIdx = i0, endReason = "Running";
+  const p0 = data[i0][4], lo = p0 * (1 - o.rangePct), hi = p0 * (1 + o.rangePct);
+  nL = Math.max(3, Math.round(Math.log(hi / lo) / Math.log(1 + o.step)) + 1);
+  L = []; for (let j = 0; j < nL; j++) L.push(lo * Math.pow(1 + o.step, j));
+  cells = new Array(nL - 1).fill(null);
+  cellQ = o.capital * o.lev / (nL - 1);
+  for (let j = 0; j < nL - 1; j++) if (L[j] >= p0) { cells[j] = { qty: cellQ / p0 }; wallet -= cellQ * (1 + o.fee); fills++; }
+  const equity = p => { let v = wallet; for (const c of cells) if (c) v += c.qty * p; return v; };
+  const closeAll = (p, pen) => { const px = p * (1 - (pen || o.slip)); for (let j = 0; j < nL - 1; j++) if (cells[j]) { wallet += cells[j].qty * px * (1 - o.fee); cells[j] = null; fills++; } };
+  let active = true, i = i0 + 1;
+  for (; i <= i1Max && active; i++) {
+    const [ts, op, hi_, lo_, cl] = data[i];
+    if (o.lev > 1) { let noti = 0; for (const c of cells) if (c) noti += c.qty * cl; wallet -= noti * o.fundingHr; }
+    const legs = cl >= op ? [[op, lo_], [lo_, hi_], [hi_, cl]] : [[op, hi_], [hi_, lo_], [lo_, cl]];
+    for (const [a, b] of legs) {
+      if (b < a) { for (let j = nL - 2; j >= 0; j--) if (!cells[j] && L[j] <= a && L[j] > b) { cells[j] = { qty: cellQ / L[j] }; wallet -= cellQ * (1 + o.fee); fills++; } }
+      else if (b > a) { for (let j = 0; j < nL - 1; j++) if (cells[j] && L[j + 1] >= a && L[j + 1] <= b) { wallet += cells[j].qty * L[j + 1] * (1 - o.fee); cells[j] = null; fills++; } }
+    }
+    if (o.lev > 1) { let noti = 0; for (const c of cells) if (c) noti += c.qty * lo_; if (equity(lo_) <= noti * 0.01) { closeAll(lo_, 0.01); liq = true; active = false; endReason = "Liquidated"; } }
+    if (active && lo_ <= L[0] * (1 - o.slBuf)) { closeAll(L[0] * (1 - o.slBuf)); slHit = true; active = false; endReason = "SL hit"; }
+    else if (active && hi_ >= L[nL - 1]) { closeAll(cl); active = false; endReason = "TP at top"; }
+    else if (active && i - i0 >= o.maxDurH) { closeAll(cl); active = false; endReason = "30-day expiry"; }
+    const eq = equity(lo_); if (eq < minEq) minEq = eq;
+    endIdx = i;
+  }
+  const still = active;
+  const lastP = data[Math.min(endIdx, i1Max)][4];
+  const eqNow = equity(lastP);
+  let held = 0, heldQty = 0; for (const c of cells) if (c) { held++; heldQty += c.qty; }
+  return { open: still, ret: (eqNow - o.capital) / o.capital, eqNow, wallet, slHit, liq, fills, minEq, endIdx, endReason: still ? "In position" : endReason,
+           lo, hi, L, nL, held, heldQty, sl: L[0] * (1 - o.slBuf), entry: p0 };
+}
+function replay(data, lev) {
+  const trades = []; let i = 24; let capital = CFG.capital0;
+  let pending = null;
+  while (i < data.length) {
+    if (!pending) {
+      const drop = data[i][4] / data[i - 24][4] - 1;
+      if (drop <= CFG.trigDrop) {
+        let lowMin = Infinity; for (let k = i - 24; k <= i; k++) if (data[k][3] < lowMin) lowMin = data[k][3];
+        pending = { trigIdx: i, lowMin };
+      }
+      i++; continue;
+    }
+    const j = pending.trigIdx + CFG.waitH;
+    if (j >= data.length) break;
+    if (data[j][4] >= pending.lowMin * CFG.stabMult) {
+      const isLive = data[j][0] >= CFG.ACCOUNT_START;
+      const cap = isLive ? capital : CFG.capital0;
+      const r = simGrid(data, j, data.length - 1, Object.assign({}, CFG, { lev, capital: cap }));
+      trades.push({ trigTs: data[pending.trigIdx][0], entryTs: data[j][0], isLive, cap, ...r });
+      if (isLive && !r.open) capital = r.eqNow;
+      i = r.endIdx + 24; pending = null; continue;
+    }
+    pending = null;
+  }
+  let waiting = null;
+  const n = data.length - 1;
+  for (let k = Math.max(24, n - CFG.waitH); k <= n; k++) {
+    const drop = data[k][4] / data[k - 24][4] - 1;
+    if (drop <= CFG.trigDrop) { let lm = Infinity; for (let q = k - 24; q <= k; q++) if (data[q][3] < lm) lm = data[q][3]; waiting = { at: data[k][0], readyAt: data[k][0] + CFG.waitH * 3600e3, lowMin: lm }; }
+  }
+  const openTrade = trades.find(t => t.open);
+  const liveClosed = trades.filter(t => t.isLive && !t.open);
+  let eq = capital; if (openTrade && openTrade.isLive) eq = capital - openTrade.cap + openTrade.eqNow;
+  return { trades, capital, equity: eq, openTrade, waiting, liveClosed };
+}
+
+/* ================= Strategy 2 engine ================= */
+function iso(ts) { return new Date(ts).toISOString().slice(0, 10); }
+function s2Sma(a, n) { const o = new Array(a.length).fill(null);
+  for (let i = n - 1; i < a.length; i++) { let s = 0, ok = true; for (let k = i - n + 1; k <= i; k++) { if (a[k] === null) { ok = false; break; } s += a[k]; } if (ok) o[i] = s / n; } return o; }
+function s2Rsi(c, n) { const o = new Array(c.length).fill(null); let ag = 0, al = 0;
+  for (let i = 1; i < c.length; i++) { const ch = c[i] - c[i-1], g = Math.max(ch, 0), l = Math.max(-ch, 0);
+    if (i <= n) { ag += g/n; al += l/n; if (i === n) o[i] = al === 0 ? 100 : 100 - 100/(1 + ag/al); }
+    else { ag = (ag*(n-1) + g)/n; al = (al*(n-1) + l)/n; o[i] = al === 0 ? 100 : 100 - 100/(1 + ag/al); } } return o; }
+function s2Weekly(daily) {
+  const weeks = []; let cur = null;
+  for (const r of daily) {
+    const dow = (new Date(r[0]).getUTCDay() + 6) % 7;
+    const monday = r[0] - dow * 86400000;
+    if (!cur || cur.m !== monday) { if (cur) weeks.push(cur.bar); cur = { m: monday, bar: [monday, r[1], r[2], r[3], r[4]] }; }
+    else { cur.bar[2] = Math.max(cur.bar[2], r[2]); cur.bar[3] = Math.min(cur.bar[3], r[3]); cur.bar[4] = r[4]; }
+  }
+  if (cur) weeks.push(cur.bar);
+  const forming = weeks.length > 0 && (weeks[weeks.length - 1][0] + 7 * 86400000 > Date.now());
+  return { weeks, forming };
+}
+function stochKD(wc, rLen, sLen, kLen, dLen) {
+  const R = s2Rsi(wc, rLen);
+  const raw = new Array(wc.length).fill(null);
+  for (let i = rLen + sLen; i < wc.length; i++) {
+    if (R[i] === null) continue;
+    let lo = Infinity, hi = -Infinity, ok = true;
+    for (let k = i - sLen + 1; k <= i; k++) { if (R[k] === null) { ok = false; break; } if (R[k] < lo) lo = R[k]; if (R[k] > hi) hi = R[k]; }
+    if (ok) raw[i] = hi === lo ? 100 : (R[i] - lo) / (hi - lo) * 100;
+  }
+  const K = s2Sma(raw, kLen), D = s2Sma(K, dLen);
+  return { K, D };
+}
+// StochRSI weekly leg with disaster SL
+function srLeg(daily, livePrice, params, tag) {
+  const { weeks, forming } = s2Weekly(daily);
+  const wDone = forming ? weeks.slice(0, -1) : weeks;
+  const wc = wDone.map(r => r[4]);
+  const { K, D } = stochKD(wc, params[0], params[1], params[2], params[3]);
+  const trades = []; let pos = 0, entry = null;
+  for (let i = 1; i < wDone.length; i++) {
+    if (pos === 1 && wDone[i][3] <= entry.p * (1 - CFG.S2_SL)) {
+      trades.push({ sys: tag, in: entry.d, out: iso(wDone[i][0]), pIn: entry.p, pOut: entry.p * (1 - CFG.S2_SL), sl: true });
+      pos = 0;
+    }
+    if (K[i] === null || D[i] === null || K[i-1] === null || D[i-1] === null) continue;
+    const up = K[i-1] <= D[i-1] && K[i] > D[i];
+    const dn = K[i-1] >= D[i-1] && K[i] < D[i];
+    if (pos === 0 && up) { pos = 1; entry = { d: iso(wDone[i][0]), p: wc[i] }; }
+    else if (pos === 1 && dn) { trades.push({ sys: tag, in: entry.d, out: iso(wDone[i][0]), pIn: entry.p, pOut: wc[i], sl: false }); pos = 0; }
+  }
+  if (pos === 1 && livePrice <= entry.p * (1 - CFG.S2_SL)) {
+    trades.push({ sys: tag, in: entry.d, out: "Live SL", pIn: entry.p, pOut: entry.p * (1 - CFG.S2_SL), sl: true }); pos = 0;
+  }
+  const n = wDone.length - 1;
+  return { pos, entry, K: K[n], D: D[n], trades, slPrice: pos ? entry.p * (1 - CFG.S2_SL) : null };
+}
+// simple weekly regime legs (no SL): posFn on completed weekly closes
+function weeklyRegimeLeg(daily, livePrice, tag, posFn) {
+  const { weeks, forming } = s2Weekly(daily);
+  const wDone = forming ? weeks.slice(0, -1) : weeks;
+  const wc = wDone.map(r => r[4]);
+  const trades = []; let pos = 0, entry = null;
+  for (let i = 1; i < wDone.length; i++) {
+    const want = posFn(wc, i) ? 1 : 0;
+    if (want !== pos) {
+      if (want === 1) entry = { d: iso(wDone[i][0]), p: wc[i] };
+      else if (entry) trades.push({ sys: tag, in: entry.d, out: iso(wDone[i][0]), pIn: entry.p, pOut: wc[i], sl: false });
+      pos = want;
+    }
+  }
+  return { pos, entry, trades };
+}
+function rocReading(daily) {
+  const { weeks, forming } = s2Weekly(daily);
+  const wDone = forming ? weeks.slice(0, -1) : weeks;
+  const wc = wDone.map(r => r[4]);
+  const n = wc.length - 1;
+  return n >= 4 ? (wc[n] / wc[n - 4] - 1) * 100 : null;
+}
+function rsiReading(daily) {
+  const { weeks, forming } = s2Weekly(daily);
+  const wDone = forming ? weeks.slice(0, -1) : weeks;
+  const wc = wDone.map(r => r[4]);
+  const R = s2Rsi(wc, 14);
+  return R[wc.length - 1];
+}
+// MA daily leg
+function maLeg(daily, tag) {
+  const dDone = daily[daily.length - 1][0] + 86400000 > Date.now() ? daily.slice(0, -1) : daily;
+  const dc = dDone.map(r => r[4]);
+  const f = s2Sma(dc, 10), s = s2Sma(dc, 150);
+  const trades = []; let pos = 0, entry = null;
+  for (let i = 1; i < dDone.length; i++) {
+    if (f[i] === null || s[i] === null) continue;
+    const want = f[i] > s[i] ? 1 : 0;
+    if (want !== pos) {
+      if (want === 1) entry = { d: iso(dDone[i][0]), p: dc[i] };
+      else if (entry) trades.push({ sys: tag, in: entry.d, out: iso(dDone[i][0]), pIn: entry.p, pOut: dc[i], sl: false });
+      pos = want;
+    }
+  }
+  return { pos, entry, fast: f[dc.length - 1], slow: s[dc.length - 1], trades };
+}
+function subEquity(leg, livePrice, cap) {
+  let c = cap;
+  const startIso = iso(CFG.ACCOUNT_START);
+  for (const t of leg.trades) {
+    if (t.out === "Live SL" || t.out >= startIso) c *= (t.pOut / t.pIn) * (1 - CFG.SPOT_FEE);
+  }
+  if (leg.pos === 1 && leg.entry) c = c * (livePrice / leg.entry.p) * (1 - CFG.SPOT_FEE / 2);
+  return c;
+}
+
+/* ================= Arena summary engine (same seed & rules as the Arena page; shorter indicator warmup — the Arena page is authoritative on minor diffs) ================= */
+const ARENA_START = Date.UTC(2026, 7, 3);
+const A_SEED = 20260807, A_FEE = 0.0007, A_SEATS = 20, A_KILL = 3, A_GEN0 = 500, A_FRESH = 50, A_EXAM = 1000;
+const A_DEP = 1000, A_RUIN = 500;
+const A_LEVS = [1,1,1,2,2,2,3,3,3,5,5,10,20,50];
+const A_TFMS = { '5m': 300e3, '15m': 900e3, '30m': 1800e3, '1h': 3600e3 };
+const A_DEPTH_DAYS = { '5m': 180, '15m': 365, '30m': 730, '1h': 1095 }; // Same depth as the Arena page so both pages run identical contests
+function A_rng(a) { return function() { a |= 0; a = a + 0x6D2B79F5 | 0;
+  let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+  return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const A_pick = (rng, arr) => arr[Math.floor(rng() * arr.length) % arr.length];
+const A_BLOCKS = {
+  MA:   { nm: 'SMA cross',    opts: [[5,10,15,20,30,40,50],[20,40,60,80,100,150,200]] },
+  EMA:  { nm: 'EMA cross',    opts: [[5,9,12,20,30],[21,26,50,100,200]] },
+  MACD: { nm: 'MACD',       opts: [[8,12,16],[21,26,34],[5,9,13]] },
+  RSI:  { nm: 'RSI band',    opts: [[7,14,21],[45,48,51,54,57,60]] },
+  SR:   { nm: 'StochRSI',   opts: [[5,8,11,14,17,20],[5,8,11,14,17,20],[2,4,6,8,10],[2,4,6,8,10]] },
+  ROC:  { nm: 'ROC momentum',    opts: [[4,8,12,16,24,32,48]] },
+  BRK:  { nm: 'Donchian break', opts: [[20,40,60,80,100]] },
+  BOLB: { nm: 'BOL break',   opts: [[20,50],[15,20,25]] },
+  BOLR: { nm: 'BOL revert',   opts: [[20,50],[15,20,25]] },
+  ST:   { nm: 'SuperTrend', opts: [[7,10,14],[2,3,4]] },
+  PSAR: { nm: 'Parabolic SAR',  opts: [[2,4],[20,30]] },
+  KC:   { nm: 'Keltner break', opts: [[20,50],[15,25]] },
+  CCI:  { nm: 'CCI',        opts: [[14,20],[0,100]] },
+  WPR:  { nm: 'W%R',     opts: [[14,28],[-50,-20]] },
+};
+const A_KEYS = Object.keys(A_BLOCKS);
+const A_TREND = ['MA','EMA','MACD','ST','BRK','KC'];
+const A_SPECIES = A_KEYS.concat(['COMBO','REGIME']);
+function A_drawSub(rng, keys) {
+  const b = A_pick(rng, keys);
+  const p = A_BLOCKS[b].opts.map(o => A_pick(rng, o));
+  if ((b === 'MA' || b === 'EMA') && p[0] >= p[1]) p[1] = Math.min(200, p[0] * 3);
+  return { block: b, p };
+}
+function A_subDesc(s) {
+  const b = A_BLOCKS[s.block];
+  let ps;
+  if (s.block === 'BOLB' || s.block === 'BOLR') ps = `${s.p[0]},${(s.p[1]/10).toFixed(1)}σ`;
+  else if (s.block === 'PSAR') ps = `${(s.p[0]/100).toFixed(2)}/${(s.p[1]/100).toFixed(2)}`;
+  else if (s.block === 'KC') ps = `${s.p[0]},${(s.p[1]/10).toFixed(1)}xATR`;
+  else ps = s.p.join('/');
+  return `${b.nm}${ps}`;
+}
+let A_ID = 0;
+function A_draw(rng, birth) {
+  const tf = A_pick(rng, ['5m','15m','30m','1h']);
+  const block = A_pick(rng, A_SPECIES);
+  let p = [], subs = null;
+  if (block === 'COMBO') { subs = [A_drawSub(rng, A_KEYS), A_drawSub(rng, A_KEYS)]; }
+  else if (block === 'REGIME') { subs = [A_drawSub(rng, A_TREND), A_drawSub(rng, ['BOLR'])]; p = [A_pick(rng, [20, 25, 30])]; }
+  else {
+    p = A_BLOCKS[block].opts.map(o => A_pick(rng, o));
+    if ((block === 'MA' || block === 'EMA') && p[0] >= p[1]) p[1] = Math.min(200, p[0] * 3);
+  }
+  const sl = A_pick(rng, [0, 0.03, 0.05, 0.10]);
+  const lev = A_pick(rng, A_LEVS);
+  return { id: 'G' + String(++A_ID).padStart(3, '0'), tf, block, p, subs, sl, lev, birth, parent: null };
+}
+function A_mut(rng, parent, birth) {
+  const g = { id: 'G' + String(++A_ID).padStart(3, '0'), tf: parent.tf, block: parent.block, p: parent.p.slice(), sl: parent.sl, lev: parent.lev, birth, parent: parent.id };
+  const dice = rng();
+  if (dice < 0.20) { const tfs = ['5m','15m','30m','1h']; g.tf = tfs[(tfs.indexOf(g.tf) + (rng() < 0.5 ? 1 : 3)) % 4]; }
+  else if (dice < 0.40) { g.sl = A_pick(rng, [0, 0.03, 0.05, 0.10]); }
+  else if (dice < 0.55) { g.lev = A_pick(rng, A_LEVS); }
+  else { const opts = A_BLOCKS[g.block].opts; const idx = Math.floor(rng() * opts.length) % opts.length;
+    g.p[idx] = A_pick(rng, opts[idx]);
+    if ((g.block === 'MA' || g.block === 'EMA') && g.p[0] >= g.p[1]) g.p[1] = Math.min(200, g.p[0] * 3); }
+  return g;
+}
+function A_desc(g) {
+  let core;
+  if (g.block === 'COMBO') core = `Consensus[${A_subDesc(g.subs[0])}∧${A_subDesc(g.subs[1])}]`;
+  else if (g.block === 'REGIME') core = `Regime[ADX>${g.p[0]}→${A_subDesc(g.subs[0])}|${A_subDesc(g.subs[1])}]`;
+  else core = A_subDesc({ block: g.block, p: g.p });
+  return `${core} ${g.lev}x` + (g.sl ? ` SL${g.sl*100}%` : '');
+}
+function A_sma(c, n) { const o = new Float64Array(c.length).fill(NaN); let s = 0;
+  for (let i = 0; i < c.length; i++) { s += c[i]; if (i >= n) s -= c[i-n]; if (i >= n-1) o[i] = s/n; } return o; }
+function A_ema(c, n) { const o = new Float64Array(c.length).fill(NaN); const a = 2/(n+1); let e = null;
+  for (let i = 0; i < c.length; i++) { e = e === null ? c[i] : c[i]*a + e*(1-a); if (i >= n-1) o[i] = e; } return o; }
+function A_rsi(c, n) { const o = new Float64Array(c.length).fill(NaN); let ag = 0, al = 0;
+  for (let i = 1; i < c.length; i++) { const ch = c[i]-c[i-1], g = ch>0?ch:0, l = ch<0?-ch:0;
+    if (i <= n) { ag += g/n; al += l/n; if (i === n) o[i] = al===0?100:100-100/(1+ag/al); }
+    else { ag = (ag*(n-1)+g)/n; al = (al*(n-1)+l)/n; o[i] = al===0?100:100-100/(1+ag/al); } } return o; }
+function A_rmax(a, n) { const o = new Float64Array(a.length).fill(NaN); const dq = [];
+  for (let i = 0; i < a.length; i++) { while (dq.length && a[dq[dq.length-1]] <= a[i]) dq.pop(); dq.push(i);
+    while (dq[0] <= i-n) dq.shift(); if (i >= n-1) o[i] = a[dq[0]]; } return o; }
+function A_rmin(a, n) { const o = new Float64Array(a.length).fill(NaN); const dq = [];
+  for (let i = 0; i < a.length; i++) { while (dq.length && a[dq[dq.length-1]] >= a[i]) dq.pop(); dq.push(i);
+    while (dq[0] <= i-n) dq.shift(); if (i >= n-1) o[i] = a[dq[0]]; } return o; }
+function A_atr(bars, n) { const o = new Float64Array(bars.length).fill(NaN); let a = null;
+  for (let i = 1; i < bars.length; i++) {
+    const tr = Math.max(bars[i][2]-bars[i][3], Math.abs(bars[i][2]-bars[i-1][4]), Math.abs(bars[i][3]-bars[i-1][4]));
+    a = a === null ? tr : (a*(n-1)+tr)/n; if (i >= n) o[i] = a; } return o; }
+function A_std(c, n) { const o = new Float64Array(c.length).fill(NaN); let s = 0, s2 = 0;
+  for (let i = 0; i < c.length; i++) { s += c[i]; s2 += c[i]*c[i];
+    if (i >= n) { s -= c[i-n]; s2 -= c[i-n]*c[i-n]; }
+    if (i >= n-1) { const m = s/n; o[i] = Math.sqrt(Math.max(0, s2/n - m*m)); } } return o; }
+const A_posCache = new Map();
+function A_adx(bars, nP) {
+  const len = bars.length;
+  const o = new Float64Array(len).fill(NaN);
+  let trS = 0, pS = 0, mS = 0, adxV = null, dxSum = 0, dxCnt = 0;
+  for (let i = 1; i < len; i++) {
+    const h = bars[i][2], l = bars[i][3], pc = bars[i-1][4], ph = bars[i-1][2], pl = bars[i-1][3];
+    const tr = Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc));
+    const up = h - ph, dn = pl - l;
+    const pDM = (up > dn && up > 0) ? up : 0;
+    const mDM = (dn > up && dn > 0) ? dn : 0;
+    if (i <= nP) { trS += tr; pS += pDM; mS += mDM; if (i < nP) continue; }
+    else { trS = trS - trS/nP + tr; pS = pS - pS/nP + pDM; mS = mS - mS/nP + mDM; }
+    const pDI = trS === 0 ? 0 : pS/trS*100, mDI = trS === 0 ? 0 : mS/trS*100;
+    const dx = (pDI + mDI) === 0 ? 0 : Math.abs(pDI - mDI)/(pDI + mDI)*100;
+    if (dxCnt < nP) { dxSum += dx; dxCnt++; if (dxCnt === nP) adxV = dxSum/nP; }
+    else adxV = (adxV*(nP-1) + dx)/nP;
+    if (adxV !== null) o[i] = adxV;
+  }
+  return o;
+}
+function A_base(bars, c, H, L, block, p) {
+  const n = c.length;
+  const pos = new Uint8Array(n);
+  const sm = (en, ex) => { let q = 0; for (let i = 1; i < n; i++) { if (q === 0 && en(i)) q = 1; else if (q === 1 && ex(i)) q = 0; pos[i] = q; } };
+  if (block === 'MA' || block === 'EMA') {
+    const fn = block === 'MA' ? A_sma : A_ema;
+    const f = fn(c, p[0]), s = fn(c, p[1]);
+    for (let i = 0; i < n; i++) pos[i] = (!Number.isNaN(f[i]) && !Number.isNaN(s[i]) && f[i] > s[i]) ? 1 : 0;
+  } else if (block === 'MACD') {
+    const f = A_ema(c, p[0]), s = A_ema(c, p[1]);
+    const macd = new Float64Array(n).fill(NaN);
+    for (let i = 0; i < n; i++) if (!Number.isNaN(f[i]) && !Number.isNaN(s[i])) macd[i] = f[i] - s[i];
+    const sig = new Float64Array(n).fill(NaN);
+    { const al = 2/(p[2]+1); let e = null, cnt = 0;
+      for (let i = 0; i < n; i++) { if (Number.isNaN(macd[i])) continue;
+        e = e === null ? macd[i] : macd[i]*al + e*(1-al); cnt++; if (cnt >= p[2]) sig[i] = e; } }
+    for (let i = 0; i < n; i++) pos[i] = (!Number.isNaN(macd[i]) && !Number.isNaN(sig[i]) && macd[i] > sig[i]) ? 1 : 0;
+  } else if (block === 'RSI') {
+    const r = A_rsi(c, p[0]);
+    for (let i = 0; i < n; i++) pos[i] = (!Number.isNaN(r[i]) && r[i] > p[1]) ? 1 : 0;
+  } else if (block === 'ROC') {
+    for (let i = 0; i < n; i++) pos[i] = (i >= p[0] && c[i] > c[i - p[0]]) ? 1 : 0;
+  } else if (block === 'BRK') {
+    const hi = A_rmax(c, p[0]), lo = A_rmin(c, Math.max(5, Math.floor(p[0]/2)));
+    sm(i => !Number.isNaN(hi[i-1]) && c[i] >= hi[i-1], i => !Number.isNaN(lo[i-1]) && c[i] <= lo[i-1]);
+  } else if (block === 'BOLB') {
+    const mid = A_sma(c, p[0]), sd = A_std(c, p[0]); const k = p[1]/10;
+    sm(i => !Number.isNaN(mid[i]) && c[i] > mid[i] + k*sd[i], i => !Number.isNaN(mid[i]) && c[i] < mid[i]);
+  } else if (block === 'BOLR') {
+    const mid = A_sma(c, p[0]), sd = A_std(c, p[0]); const k = p[1]/10;
+    sm(i => !Number.isNaN(mid[i]) && c[i] < mid[i] - k*sd[i], i => !Number.isNaN(mid[i]) && c[i] >= mid[i]);
+  } else if (block === 'ST') {
+    const atr = A_atr(bars, p[0]); const m = p[1];
+    let trend = 0, fUB = NaN, fLB = NaN;
+    for (let i = 1; i < n; i++) {
+      if (Number.isNaN(atr[i])) { pos[i] = 0; continue; }
+      const hl2 = (H[i] + L[i]) / 2;
+      const bUB = hl2 + m*atr[i], bLB = hl2 - m*atr[i];
+      fUB = (Number.isNaN(fUB) || bUB < fUB || c[i-1] > fUB) ? bUB : fUB;
+      fLB = (Number.isNaN(fLB) || bLB > fLB || c[i-1] < fLB) ? bLB : fLB;
+      if (trend === 0) trend = c[i] >= hl2 ? 1 : -1;
+      else if (trend === 1 && c[i] < fLB) trend = -1;
+      else if (trend === -1 && c[i] > fUB) trend = 1;
+      pos[i] = trend === 1 ? 1 : 0;
+    }
+  } else if (block === 'PSAR') {
+    const step = p[0]/100, mx = p[1]/100;
+    let up = true, sar = L[0], ep = H[0], af = step;
+    for (let i = 1; i < n; i++) {
+      sar = sar + af*(ep - sar);
+      if (up) { sar = Math.min(sar, L[i-1], i >= 2 ? L[i-2] : L[i-1]);
+        if (H[i] > ep) { ep = H[i]; af = Math.min(af + step, mx); }
+        if (L[i] < sar) { up = false; sar = ep; ep = L[i]; af = step; } }
+      else { sar = Math.max(sar, H[i-1], i >= 2 ? H[i-2] : H[i-1]);
+        if (L[i] < ep) { ep = L[i]; af = Math.min(af + step, mx); }
+        if (H[i] > sar) { up = true; sar = ep; ep = H[i]; af = step; } }
+      pos[i] = up ? 1 : 0;
+    }
+  } else if (block === 'KC') {
+    const mid = A_ema(c, p[0]), atr = A_atr(bars, p[0]); const m = p[1]/10;
+    sm(i => !Number.isNaN(mid[i]) && !Number.isNaN(atr[i]) && c[i] > mid[i] + m*atr[i],
+       i => !Number.isNaN(mid[i]) && c[i] < mid[i]);
+  } else if (block === 'CCI') {
+    const N = p[0], th = p[1];
+    const tp = new Float64Array(n);
+    for (let i = 0; i < n; i++) tp[i] = (H[i] + L[i] + c[i]) / 3;
+    const mtp = A_sma(Array.from(tp), N);
+    for (let i = N - 1; i < n; i++) {
+      let md = 0;
+      for (let k = i - N + 1; k <= i; k++) md += Math.abs(tp[k] - mtp[i]);
+      md /= N;
+      const cci = md === 0 ? 0 : (tp[i] - mtp[i]) / (0.015 * md);
+      pos[i] = cci > th ? 1 : 0;
+    }
+  } else {
+    const N = p[0], th = p[1];
+    const hh = A_rmax(H, N), ll = A_rmin(L, N);
+    for (let i = 0; i < n; i++) {
+      if (Number.isNaN(hh[i]) || Number.isNaN(ll[i]) || hh[i] === ll[i]) { pos[i] = 0; continue; }
+      const wpr = (hh[i] - c[i]) / (hh[i] - ll[i]) * -100;
+      pos[i] = wpr > th ? 1 : 0;
+    }
+  }
+  return pos;
+}
+function A_pos(g) {
+  const key = g.tf + '|' + g.block + '|' + g.p.join(',') + '|' + (g.subs ? g.subs.map(s => s.block + ':' + s.p.join('.')).join('+') : '');
+  if (A_posCache.has(key)) return A_posCache.get(key);
+  const bars = state.arenaBars[g.tf];
+  const c = bars.map(r => r[4]), H = bars.map(r => r[2]), L = bars.map(r => r[3]);
+  const n = c.length;
+  let pos;
+  if (g.block === 'COMBO') {
+    const a1 = A_base(bars, c, H, L, g.subs[0].block, g.subs[0].p);
+    const a2 = A_base(bars, c, H, L, g.subs[1].block, g.subs[1].p);
+    pos = new Uint8Array(n);
+    for (let i = 0; i < n; i++) pos[i] = (a1[i] && a2[i]) ? 1 : 0;
+  } else if (g.block === 'REGIME') {
+    const trend = A_base(bars, c, H, L, g.subs[0].block, g.subs[0].p);
+    const rev = A_base(bars, c, H, L, g.subs[1].block, g.subs[1].p);
+    const adx = A_adx(bars, 14);
+    pos = new Uint8Array(n);
+    for (let i = 0; i < n; i++) pos[i] = (!Number.isNaN(adx[i]) && adx[i] > g.p[0]) ? trend[i] : rev[i];
+  } else {
+    pos = A_base(bars, c, H, L, g.block, g.p);
+  }
+  A_posCache.set(key, pos);
+  return pos;
+}
+function A_score(g, fromTs, toTs) {
+  const bars = state.arenaBars[g.tf];
+  const pos = A_pos(g);
+  const L = g.lev || 1, barH = A_TFMS[g.tf] / 3600e3;
+  const FUND_H = 0.0000125;
+  let eq = 1, inPos = false, entryP = 0, entryEq = 0, eqBefore = 0, heldBars = 0;
+  let trades = 0, liqs = 0, slArmed = true;
+  const settle = (px) => {
+    const factor = 1 + L * (px / entryP - 1) - heldBars * barH * L * FUND_H;
+    eq = entryEq * Math.max(0, factor) * (1 - A_FEE * L);
+    trades++;
+    inPos = false;
+  };
+  for (let i = 1; i < bars.length; i++) {
+    const ts = bars[i][0];
+    if (ts <= fromTs) continue;
+    if (ts > toTs) break;
+    const c = bars[i][4], lo = bars[i][3];
+    if (inPos) {
+      heldBars++;
+      const liqFactor = 1 + L * (lo / entryP - 1) - heldBars * barH * L * FUND_H;
+      if (liqFactor <= 0.05) { eq = entryEq * 0.02; liqs++; trades++; inPos = false; slArmed = false; }
+      else if (g.sl > 0 && lo <= entryP * (1 - g.sl)) { settle(entryP * (1 - g.sl)); slArmed = false; }
+    }
+    const want = pos[i];
+    if (!slArmed) { if (want === 0) slArmed = true; }
+    else if (!inPos && want === 1) {
+      eqBefore = eq;
+      entryEq = eq * (1 - A_FEE * L);
+      entryP = c; heldBars = 0; inPos = true;
+    } else if (inPos && want === 0) settle(c);
+    if (eq <= 0.001 && !inPos) break;
+  }
+  let lastC = null;
+  for (let i = bars.length - 1; i >= 0; i--) if (bars[i][0] <= toTs) { lastC = bars[i][4]; break; }
+  const eqEnd = inPos && lastC ? entryEq * Math.max(0, 1 + L * (lastC / entryP - 1) - heldBars * barH * L * FUND_H) : eq;
+  return { ret: (eqEnd - 1) * 100, trades, liqs, inPos };
+}
+function A_exam(g) { return A_score(g, g.birth - A_EXAM * A_TFMS[g.tf], g.birth).ret; }
+function A_replay() {
+  const rng = A_rng(A_SEED);
+  A_ID = 0;
+  const cands = [];
+  for (let i = 0; i < A_GEN0; i++) cands.push(A_draw(rng, ARENA_START));
+  const ranked = cands.map(g => ({ g, e: A_exam(g) })).sort((a, b) => b.e - a.e || a.g.id.localeCompare(b.g.id));
+  let pool = ranked.slice(0, A_SEATS).map(x => x.g);
+  let deaths = 0, gen = 0;
+  const now = Math.max(...Object.values(state.arenaBars).map(b => b[b.length-1][0]));
+  for (let W = ARENA_START + 7*86400e3; W <= now; W += 7*86400e3) {
+    gen++;
+    const scored = pool.map(g => ({ g, s: A_score(g, g.birth, W) }));
+    const bankrupt = scored.filter(x => A_DEP * (1 + x.s.ret/100) <= A_RUIN);
+    const bankruptIds = new Set(bankrupt.map(x => x.g.id));
+    const exempt = x => (W - x.g.birth < 14*86400e3) && x.s.trades < 5;
+    const killable = scored.filter(x => !bankruptIds.has(x.g.id) && !exempt(x)).sort((a, b) => a.s.ret - b.s.ret || a.g.id.localeCompare(b.g.id));
+    const dead = bankrupt.concat(killable.slice(0, Math.min(A_KILL, killable.length)));
+    const deadIds = new Set(dead.map(x => x.g.id));
+    const survivors = pool.filter(g => !deadIds.has(g.id));
+    const top5 = scored.filter(x => !deadIds.has(x.g.id)).sort((a, b) => b.s.ret - a.s.ret || a.g.id.localeCompare(b.g.id)).slice(0, 5);
+    const born = [];
+    for (let m = 0; m < dead.length; m++) {
+      if (m < 2 && top5.length) born.push(A_mut(rng, A_pick(rng, top5).g, W));
+      else {
+        const fresh = [];
+        for (let q = 0; q < A_FRESH; q++) fresh.push(A_draw(rng, W));
+        fresh.sort((a, b) => A_exam(b) - A_exam(a) || a.id.localeCompare(b.id));
+        born.push(fresh[0]);
+      }
+    }
+    pool = survivors.concat(born);
+    deaths += dead.length;
+  }
+  return { pool, gen, deaths, now };
+}
+async function loadArenaLite() {
+  try {
+    const bars = {};
+    for (const tf of ['5m','15m','30m','1h']) {
+      const start = Date.now() - A_DEPTH_DAYS[tf] * 86400e3;
+      let rows = [], t = start, guard = 0;
+      while (guard++ < 400) {
+        const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${tf}&startTime=${Math.floor(t)}&limit=1000`).then(x => x.json());
+        if (!Array.isArray(r) || r.length === 0) break;
+        for (const k of r) rows.push([k[0], +k[1], +k[2], +k[3], +k[4]]);
+        if (r.length < 1000) break;
+        t = r[r.length-1][6] + 1;
+      }
+      if (rows.length && rows[rows.length-1][0] + A_TFMS[tf] > Date.now()) rows.pop();
+      bars[tf] = rows;
+    }
+    state.arenaBars = bars;
+    A_posCache.clear();
+    state.arena = A_replay();
+    renderOverviewArena();
+  } catch (e) {
+    const el = $("ovALoad"); if (el) el.textContent = "Arena data failed to load: " + e.message;
+  }
+}
+/* ================= Arena Galaxy - ENERGY core (Three.js) =================
+   Core: 22,000 monochrome white particles advected by a deterministic
+   trigonometric curl-like flow field (inspired by Hajime Kutsuwada's ENERGY).
+   Particles accumulate along convergence sheets -> smoke/ink tendrils.
+   Genes orbit as glowing sprites; deep-space starfield behind. */
+const Galaxy = {
+  started: false, genes: [], geneGroup: null, hover: null, t: 0, mx: 0, my: 0,
+  init() {
+    const canvas = $("galaxy");
+    this.tip = $("gTip");
+    if (!canvas) return;
+    if (typeof THREE === "undefined") {
+      canvas.style.display = "none";
+      const el = document.createElement("div");
+      el.style.cssText = "padding:40px;text-align:center;color:var(--muted);font-size:12px";
+      el.textContent = "3D engine (three.js CDN) failed to load; galaxy visualization unavailable. Data tables are unaffected.";
+      canvas.parentNode.insertBefore(el, canvas);
+      return;
+    }
+    this.canvas = canvas;
+    this.HGT = window.innerHeight;
+    const MOBILE = Math.min(window.innerWidth, window.innerHeight) < 700;
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: "high-performance" });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MOBILE ? 1.5 : 2));
+    this.renderer = renderer;
+    const scene = new THREE.Scene();
+    this.scene = scene;
+    const cam = new THREE.PerspectiveCamera(55, 1, 1, 6000);
+    cam.position.set(0, 30, 430);
+    this.cam = cam;
+    this.targetR = 147; this.camR = 147;
+
+    /* ---- textures ---- */
+    const mkTex = (w, h, draw) => {
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      const x = c.getContext("2d"); draw(x, w, h);
+      const tx = new THREE.CanvasTexture(c); tx.needsUpdate = true; return tx;
+    };
+    this.texDot = mkTex(128, 128, x => {
+      const g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+      g.addColorStop(0, "rgba(255,255,255,1)");
+      g.addColorStop(0.25, "rgba(255,255,255,.55)");
+      g.addColorStop(0.6, "rgba(255,255,255,.12)");
+      g.addColorStop(1, "rgba(255,255,255,0)");
+      x.fillStyle = g; x.fillRect(0, 0, 128, 128);
+    });
+    this.texRing = mkTex(128, 128, x => {
+      x.strokeStyle = "rgba(255,255,255,.95)"; x.lineWidth = 3.5;
+      x.beginPath(); x.arc(64, 64, 50, 0, 6.283); x.stroke();
+      x.strokeStyle = "rgba(255,255,255,.22)"; x.lineWidth = 8;
+      x.beginPath(); x.arc(64, 64, 50, 0, 6.283); x.stroke();
+    });
+    this.texHard = mkTex(64, 64, x => {
+      const g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+      g.addColorStop(0, "rgba(255,255,255,1)");
+      g.addColorStop(0.42, "rgba(255,255,255,.85)");
+      g.addColorStop(0.62, "rgba(255,255,255,.14)");
+      g.addColorStop(1, "rgba(255,255,255,0)");
+      x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+    });
+    /* ---- point shader with per-particle size ---- */
+    const mkPointsMat = (tex, op) => new THREE.ShaderMaterial({
+      uniforms: { uTex: { value: tex }, uOp: { value: op }, uScale: { value: 560 } },
+      vertexShader:
+        "attribute float aSize; attribute vec3 aColor; varying vec3 vC; uniform float uScale;\n" +
+        "void main(){ vC = aColor; vec4 mv = modelViewMatrix * vec4(position, 1.0);\n" +
+        "gl_PointSize = aSize * (uScale / -mv.z); gl_Position = projectionMatrix * mv; }",
+      fragmentShader:
+        "uniform sampler2D uTex; uniform float uOp; varying vec3 vC;\n" +
+        "void main(){ vec4 t = texture2D(uTex, gl_PointCoord); gl_FragColor = vec4(vC, t.a * uOp); }",
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+
+    /* ---- ENERGY core: flow-field particle turbulence ---- */
+    const NE = MOBILE ? 16000 : 42000;
+    this.NE = NE;
+    const rngC = A_rng(888);
+    const tmpC = new THREE.Color();
+    this.corePos = new Float32Array(NE * 3);
+    this.spd = new Float32Array(NE);
+    const col = new Float32Array(NE * 3);
+    const siz = new Float32Array(NE);
+    // spawn in irregular gaussian clumps -> asymmetric smoke mass
+    const CL = 16, cls = [];
+    for (let c = 0; c < CL; c++) {
+      const u = rngC() * 2 - 1, phv = rngC() * Math.PI * 2, rr = 60 + rngC() * 215;
+      const sqv = Math.sqrt(1 - u * u);
+      cls.push([sqv * Math.cos(phv) * rr, u * rr * 0.62, sqv * Math.sin(phv) * rr, 26 + rngC() * 74]);
+    }
+    const gauss = () => (rngC() + rngC() + rngC() - 1.5);
+    for (let i = 0; i < NE; i++) {
+      const c = cls[(i * 7919) % CL];
+      this.corePos[i * 3]     = c[0] + gauss() * c[3];
+      this.corePos[i * 3 + 1] = c[1] + gauss() * c[3] * 0.8;
+      this.corePos[i * 3 + 2] = c[2] + gauss() * c[3];
+      this.spd[i] = 0.45 + rngC() * 1.15;
+      const m = Math.pow(rngC(), 3.0);
+      const lum = 0.28 + m * 0.72 + (rngC() < 0.04 ? 0.3 : 0);   // mostly dim, few bright
+      col[i * 3] = lum; col[i * 3 + 1] = lum; col[i * 3 + 2] = lum;
+      siz[i] = 1.4 + m * 4.2;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(this.corePos, 3).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute("aColor", new THREE.BufferAttribute(col, 3));
+    geo.setAttribute("aSize", new THREE.BufferAttribute(siz, 1));
+    this.matCore = mkPointsMat(this.texHard, 0.85);
+    this.core = new THREE.Points(geo, this.matCore);
+    this.core.frustumCulled = false;
+    scene.add(this.core);
+
+    /* ---- gene pool: 480 purple genes orbiting like the top 20 ---- */
+    const rng = A_rng(777);
+    const NP = 480;
+    const ppos = new Float32Array(NP * 3);
+    const pcol = new Float32Array(NP * 3);
+    const psiz = new Float32Array(NP);
+    this.poolOrb = new Float32Array(NP * 5); // a, ph, w, inc, node
+    for (let i = 0; i < NP; i++) {
+      const inside = rng() < 0.4;
+      const a = inside ? 60 + rng() * 200 : 260 + rng() * 270;   // inside & outside the white turbulence
+      this.poolOrb[i*5]   = a;
+      this.poolOrb[i*5+1] = rng() * Math.PI * 2;
+      this.poolOrb[i*5+2] = (0.08 + rng() * 0.17) * (rng() < 0.5 ? 1 : -1);
+      this.poolOrb[i*5+3] = (rng() - 0.5) * 1.6;
+      this.poolOrb[i*5+4] = rng() * Math.PI * 2;
+      tmpC.setHSL(0.745 + (rng() - 0.5) * 0.05, 0.8, 0.56 + rng() * 0.2);
+      pcol[i*3] = tmpC.r; pcol[i*3+1] = tmpC.g; pcol[i*3+2] = tmpC.b;
+      psiz[i] = (11 + rng() * 9) * 1.9;   // same on-screen size range as the top-20 sprites
+    }
+    const dgeo = new THREE.BufferGeometry();
+    dgeo.setAttribute("position", new THREE.BufferAttribute(ppos, 3).setUsage(THREE.DynamicDrawUsage));
+    dgeo.setAttribute("aColor", new THREE.BufferAttribute(pcol, 3));
+    dgeo.setAttribute("aSize", new THREE.BufferAttribute(psiz, 1));
+    this.matDust = mkPointsMat(this.texDot, 0.5);
+    this.dust = new THREE.Points(dgeo, this.matDust);
+    this.poolPos = ppos;
+    this.dust.frustumCulled = false;
+    scene.add(this.dust);
+
+    /* ---- deep-space starfield ---- */
+    const rngS = A_rng(999);
+    const NS = MOBILE ? 9000 : 28000;
+    const spos = new Float32Array(NS * 3);
+    const scol = new Float32Array(NS * 3);
+    const ssiz = new Float32Array(NS);
+    const bn = new THREE.Vector3(0.42, 1, 0.26).normalize();   // band plane normal
+    const bu = new THREE.Vector3(1, 0, 0).cross(bn).normalize();
+    const bv = bn.clone().cross(bu).normalize();
+    for (let i = 0; i < NS; i++) {
+      let px, py, pz, band = i < NS * 0.55;
+      if (band) {
+        const r = 600 + Math.pow(rngS(), 0.6) * 1500;
+        const ang = rngS() * Math.PI * 2;
+        const off = (rngS() + rngS() + rngS() - 1.5) * 120;   // gaussian-ish thickness
+        px = bu.x * Math.cos(ang) * r + bv.x * Math.sin(ang) * r + bn.x * off;
+        py = bu.y * Math.cos(ang) * r + bv.y * Math.sin(ang) * r + bn.y * off;
+        pz = bu.z * Math.cos(ang) * r + bv.z * Math.sin(ang) * r + bn.z * off;
+      } else {
+        const u = rngS() * 2 - 1, phi = rngS() * Math.PI * 2;
+        const r = 750 + rngS() * 1500, sq = Math.sqrt(1 - u * u);
+        px = sq * Math.cos(phi) * r; py = u * r; pz = sq * Math.sin(phi) * r;
+      }
+      spos[i * 3] = px; spos[i * 3 + 1] = py; spos[i * 3 + 2] = pz;
+      const w = rngS();   // stellar temperature classes
+      if (w < 0.10) tmpC.setRGB(1, 0.925, 0.82);
+      else if (w < 0.26) tmpC.setRGB(1, 0.973, 0.92);
+      else if (w < 0.70) tmpC.setRGB(1, 1, 1);
+      else tmpC.setRGB(0.84, 0.895, 1);
+      const m = Math.pow(rngS(), 3.8);   // power law: most stars are tiny
+      const lum = (band ? 0.26 : 0.34) + m * 0.66;
+      scol[i * 3] = tmpC.r * lum; scol[i * 3 + 1] = tmpC.g * lum; scol[i * 3 + 2] = tmpC.b * lum;
+      ssiz[i] = (band ? 0.4 : 0.5) + m * (band ? 2.4 : 3.2);
+    }
+    const sgeo = new THREE.BufferGeometry();
+    sgeo.setAttribute("position", new THREE.BufferAttribute(spos, 3));
+    sgeo.setAttribute("aColor", new THREE.BufferAttribute(scol, 3));
+    sgeo.setAttribute("aSize", new THREE.BufferAttribute(ssiz, 1));
+    this.matStar = mkPointsMat(this.texDot, 0.5);
+    this.stars = new THREE.Points(sgeo, this.matStar);
+    this.stars.frustumCulled = false;
+    scene.add(this.stars);
+    const mkNeb = (color, sx, sy, x, y, z, op) => {
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: this.texDot, color, transparent: true, opacity: op,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      }));
+      s.scale.set(sx, sy, 1); s.position.set(x, y, z);
+      this.stars.add(s);
+    };
+    mkNeb(0x9a6050, 1500, 950, -700, 260, -1250, 0.05);   // faint warm nebulosity
+    mkNeb(0x44608c, 1150, 720, 900, -340, -1350, 0.04);   // faint cool airglow
+
+    /* ---- Atom: purple nucleus + electrons with light trails ---- */
+    const atom = new THREE.Group();
+    this.atom = atom;
+    scene.add(atom);
+    const nuc = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: this.texDot, color: 0xff5a26, transparent: true, opacity: 0.9,
+      blending: THREE.AdditiveBlending, depthWrite: false }));
+    nuc.scale.set(46, 46, 1); atom.add(nuc);
+    const nuc2 = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: this.texDot, color: 0xffd98a, transparent: true, opacity: 0.95,
+      blending: THREE.AdditiveBlending, depthWrite: false }));
+    nuc2.scale.set(18, 18, 1); atom.add(nuc2);
+    this.nuc = nuc;
+    const TRAIL = 80;
+    this.matTrail = mkPointsMat(this.texDot, 0.9);
+    this.electrons = [];
+    const orbits = [
+      { rx: 100, rz: 40, tx: 0.45, tz: 0.0,  sp: 1.35, ph: 0 },
+      { rx: 92,  rz: 37, tx: -0.5, tz: 1.05, sp: 1.75, ph: 2.1 },
+      { rx: 106, rz: 44, tx: 1.15, tz: 2.1,  sp: 1.05, ph: 4.2 },
+      { rx: 86,  rz: 34, tx: 0.2,  tz: -1.0, sp: 2.05, ph: 1.1 },
+    ];
+    this._ev = new THREE.Vector3();
+    for (const o of orbits) {
+      const eul = new THREE.Euler(o.tx, 0, o.tz);
+      const mtx = new THREE.Matrix4().makeRotationFromEuler(eul);
+      // faint orbit path streak
+      const ringPts = [];
+      for (let k = 0; k <= 96; k++) { const a2 = k / 96 * Math.PI * 2; ringPts.push(new THREE.Vector3(Math.cos(a2) * o.rx, 0, Math.sin(a2) * o.rz)); }
+      const rg = new THREE.BufferGeometry().setFromPoints(ringPts);
+      const ring = new THREE.Line(rg, new THREE.LineBasicMaterial({
+        color: 0xd9823a, transparent: true, opacity: 0.10,
+        blending: THREE.AdditiveBlending, depthWrite: false }));
+      ring.rotation.copy(eul);
+      atom.add(ring);
+      // electron head
+      const el = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: this.texDot, color: 0xffe4b0, transparent: true, opacity: 1,
+        blending: THREE.AdditiveBlending, depthWrite: false }));
+      el.scale.set(14, 14, 1);
+      atom.add(el);
+      // comet trail: Points with per-point size + color falloff
+      const tp = new Float32Array(TRAIL * 3);
+      const tc = new Float32Array(TRAIL * 3);
+      const tsz = new Float32Array(TRAIL);
+      for (let k = 0; k < TRAIL; k++) {
+        const f = 1 - k / TRAIL, ff = f * f;
+        tc[k*3] = 1.0 * ff; tc[k*3+1] = 0.55 * ff * ff; tc[k*3+2] = 0.07 * ff * ff;
+        tsz[k] = 1.2 + 8.5 * f;
+      }
+      const tg = new THREE.BufferGeometry();
+      tg.setAttribute("position", new THREE.BufferAttribute(tp, 3).setUsage(THREE.DynamicDrawUsage));
+      tg.setAttribute("aColor", new THREE.BufferAttribute(tc, 3));
+      tg.setAttribute("aSize", new THREE.BufferAttribute(tsz, 1));
+      const trail = new THREE.Points(tg, this.matTrail);
+      trail.frustumCulled = false;
+      atom.add(trail);
+      this.electrons.push({ o, el, tp, tg, mtx, started: false });
+    }
+    /* ---- interaction ---- */
+    this.ray = new THREE.Raycaster();
+    this.mouseNDC = new THREE.Vector2(-2, -2);
+    canvas.addEventListener("mousemove", e => {
+      const r = canvas.getBoundingClientRect();
+      this.mx = (e.clientX - r.left) / r.width * 2 - 1;
+      this.my = (e.clientY - r.top) / r.height * 2 - 1;
+      this.mouseNDC.set(this.mx, -this.my);
+      this.tipXY = [e.clientX - r.left, e.clientY - r.top];
+    });
+    canvas.addEventListener("wheel", e => {
+      e.preventDefault();
+      this.targetR = Math.min(950, Math.max(110, this.targetR * (1 + e.deltaY * 0.0012)));
+    }, { passive: false });
+    canvas.addEventListener("mouseleave", () => {
+      this.mouseNDC.set(-2, -2); this.mx = 0; this.my = 0;
+      this.hover = null; if (this.tip) this.tip.style.display = "none";
+    });
+
+    const resize = () => {
+      const w = window.innerWidth, hh = window.innerHeight;
+      this.HGT = hh;
+      renderer.setSize(w, hh, false);
+      cam.aspect = w / hh;
+      cam.updateProjectionMatrix();
+      this.W = w;
+      const uScale = hh * renderer.getPixelRatio() * 0.5;
+      this.matCore.uniforms.uScale.value = uScale;
+      this.matDust.uniforms.uScale.value = uScale;
+      this.matStar.uniforms.uScale.value = uScale;
+      if (this.matTrail) this.matTrail.uniforms.uScale.value = uScale;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+    this.labelBox = $("gLabels");
+    if (!this.started) { this.started = true; requestAnimationFrame(() => this.loop()); }
+  },
+
+  setData(scored) {
+    if (!this.scene) { return; }
+    if (this.geneGroup) this.scene.remove(this.geneGroup);
+    const grp = new THREE.Group();
+    const rng = A_rng(4242);
+    this.genes = scored.map((x, i) => {
+      const eq = A_DEP * (1 + x.s.ret / 100);
+      const win = eq >= A_DEP;
+      const fwd = i < 5 && x.s.trades >= 1;
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: this.texDot, color: win ? 0x34d399 : 0xf87171, transparent: true,
+        opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false,
+      }));
+      const sz = Math.min(22, 11 + Math.abs(x.s.ret) / 9) * (fwd ? 1.2 : 1);
+      sp.scale.set(sz, sz, 1);
+      if (fwd) {
+        const ring = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: this.texRing, color: 0xfbbf24, transparent: true, opacity: 0.6, depthWrite: false,
+        }));
+        ring.scale.set(1.55, 1.55, 1); sp.add(ring);
+      }
+      if (x.s.inPos) {
+        const ring = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: this.texRing, color: 0x2dd4bf, transparent: true, opacity: 0.55, depthWrite: false,
+        }));
+        ring.scale.set(1.3, 1.3, 1); sp.add(ring);
+      }
+      grp.add(sp);
+      return {
+        d: x, eq, fwd, sp,
+        a: 215 + i * 10 + rng() * 8,
+        ph: rng() * Math.PI * 2,
+        w: (0.10 + rng() * 0.15) * (rng() < 0.65 ? 1 : -1) * (x.s.inPos ? 1.5 : 1),
+        inc: (rng() - 0.5) * 0.9,
+        node: rng() * Math.PI * 2,
+      };
+    });
+    this.geneGroup = grp;
+    this.scene.add(grp);
+  },
+
+  loop() {
+    requestAnimationFrame(() => this.loop());
+    if (document.hidden || !this.renderer) return;
+    this.t += 0.016;
+    const t = this.t;
+
+    /* ---- ENERGY: advect particles through a deterministic curl-like flow ---- */
+    const F1 = 0.012, F2 = 0.031;
+    const pos = this.corePos, spd = this.spd, NE = this.NE;
+    const dt = 0.9;
+    for (let i = 0, k = 0; i < NE; i++, k += 3) {
+      const x = pos[k], y = pos[k + 1], z = pos[k + 2];
+      let vx = Math.sin(y * F1 + t * 0.42) + 0.55 * Math.sin((z + y) * F2 + t * 0.71);
+      let vy = Math.sin(z * F1 + t * 0.55) + 0.55 * Math.sin((x + z) * F2 + t * 0.63);
+      let vz = Math.sin(x * F1 + t * 0.37) + 0.55 * Math.sin((y + x) * F2 + t * 0.89);
+      const rr = Math.sqrt(x * x + y * y * 2.3 + z * z * 1.25);
+      const over = Math.max(0, rr - 265) / 265;
+      vx -= x * over * 0.055; vy -= y * over * 0.075; vz -= z * over * 0.06;
+      const s = spd[i] * dt;
+      pos[k] = x + vx * s; pos[k + 1] = y + vy * s; pos[k + 2] = z + vz * s;
+    }
+    this.core.geometry.attributes.position.needsUpdate = true;
+
+    /* ---- atom electrons + comet trails ---- */
+    if (this.electrons) {
+      this.atom.rotation.y = t * 0.12;
+      this.nuc.material.opacity = 0.72 + 0.16 * Math.sin(t * 2.1);
+      const ev = this._ev;
+      for (const e of this.electrons) {
+        const a2 = e.o.ph + t * e.o.sp;
+        ev.set(Math.cos(a2) * e.o.rx, 0, Math.sin(a2) * e.o.rz).applyMatrix4(e.mtx);
+        e.el.position.copy(ev);
+        const tp = e.tp;
+        if (!e.started) { for (let k = 0; k < tp.length; k += 3) { tp[k] = ev.x; tp[k+1] = ev.y; tp[k+2] = ev.z; } e.started = true; }
+        else { tp.copyWithin(3, 0, tp.length - 3); tp[0] = ev.x; tp[1] = ev.y; tp[2] = ev.z; }
+        e.tg.attributes.position.needsUpdate = true;
+      }
+    }
+    this.core.rotation.y = t * 0.03;
+    this.matCore.uniforms.uOp.value = 0.78 + 0.07 * Math.sin(t * 0.5);
+    const PO = this.poolOrb, PP = this.poolPos;
+    for (let i = 0, k = 0, j = 0; i < 480; i++, k += 3, j += 5) {
+      const ang = PO[j+1] + t * PO[j+2];
+      const x = Math.cos(ang) * PO[j], z0 = Math.sin(ang) * PO[j];
+      const ci = Math.cos(PO[j+3]), si = Math.sin(PO[j+3]);
+      const y1 = -z0 * si, z1 = z0 * ci;
+      const cn = Math.cos(PO[j+4]), sn = Math.sin(PO[j+4]);
+      PP[k] = x * cn - z1 * sn; PP[k+1] = y1; PP[k+2] = x * sn + z1 * cn;
+    }
+    this.dust.geometry.attributes.position.needsUpdate = true;
+    this.stars.rotation.y = t * 0.004;
+
+    /* ---- gene orbits ---- */
+    for (const g of this.genes) {
+      const ang = g.ph + t * g.w;
+      let x = Math.cos(ang) * g.a, z = Math.sin(ang) * g.a, y = 0;
+      const y1 = y * Math.cos(g.inc) - z * Math.sin(g.inc);
+      const z1 = y * Math.sin(g.inc) + z * Math.cos(g.inc);
+      const x2 = x * Math.cos(g.node) - z1 * Math.sin(g.node);
+      const z2 = x * Math.sin(g.node) + z1 * Math.cos(g.node);
+      g.sp.position.set(x2, y1, z2);
+    }
+
+    /* ---- camera: auto-orbit + parallax + zoom ---- */
+    this.camR += (this.targetR - this.camR) * 0.06;
+    const scrollPush = Math.min(240, (window.scrollY || 0) * 0.35);
+    const camA = t * 0.045 + this.mx * 0.45;
+    const camR = Math.max(150, this.camR - scrollPush), camY = 40 - this.my * 70;
+    this.cam.position.set(Math.sin(camA) * camR, camY, Math.cos(camA) * camR);
+    this.cam.lookAt(0, 0, 0);
+
+    /* ---- hover ---- */
+    if (this.mouseNDC.x > -1.5 && this.genes.length) {
+      this.ray.setFromCamera(this.mouseNDC, this.cam);
+      const hits = this.ray.intersectObjects(this.genes.map(g => g.sp), false);
+      const best = hits.length ? this.genes.find(g => g.sp === hits[0].object) : null;
+      this.hover = best;
+      if (best && this.tip && this.tipXY) {
+        this.tip.style.display = "block";
+        this.tip.style.left = Math.min(this.tipXY[0] + 14, this.W - 250) + "px";
+        this.tip.style.top = (this.tipXY[1] + 14) + "px";
+        this.tip.innerHTML = `<b>${best.d.g.id}</b> ${A_desc(best.d.g)}<br>@${best.d.g.tf} · <b class="${best.eq >= A_DEP ? "up" : "down"}">$${best.eq.toFixed(0)}</b> · ${best.d.s.trades} trades · ${best.d.s.inPos ? "● LONG" : "○ FLAT"}${best.fwd ? " · ★ Forward Top 5" : ""}`;
+      } else if (this.tip) this.tip.style.display = "none";
+    }
+
+    /* ---- labels: Forward Top 5 + hover ---- */
+    if (this.labelBox && (this.frameN = (this.frameN || 0) + 1)) {
+      const v = new THREE.Vector3();
+      let html = "";
+      for (const g of this.genes) {
+        if (!g.fwd && g !== this.hover) continue;
+        v.copy(g.sp.position).project(this.cam);
+        if (v.z > 1) continue;
+        const sx = (v.x * 0.5 + 0.5) * this.W, sy = (-v.y * 0.5 + 0.5) * this.HGT;
+        const dim = 0.45 + 0.55 * Math.min(1, Math.max(0, 1.6 - v.z));
+        html += `<div style="position:absolute;left:${sx.toFixed(0)}px;top:${(sy - 26).toFixed(0)}px;transform:translateX(-50%);font:600 10px system-ui;letter-spacing:.12em;color:rgba(244,244,250,${dim.toFixed(2)});text-shadow:0 0 8px rgba(0,0,0,.9)">${g.d.g.id}</div>`;
+      }
+      this.labelBox.innerHTML = html;
+    }
+
+    this.renderer.render(this.scene, this.cam);
+  },
+};
+
+function renderOverviewArena() {
+  if (!state.arena) return;
+  const { pool, gen, deaths, now } = state.arena;
+  const scored = pool.map(g => ({ g, s: A_score(g, g.birth, now) }));
+  scored.sort((a, b) => b.s.ret - a.s.ret || a.g.id.localeCompare(b.g.id));
+  const liveN = scored.filter(x => x.s.inPos).length;
+  $("ovALoad").textContent = `Gen ${gen} · ${deaths} eliminated · ${liveN}/20 in position now`;
+  $("ovAGen").textContent = `Gen ${gen} · ${liveN}/20 in position`;
+  $("ovATop").textContent = scored[0] ? `Leader ${scored[0].g.id} ${fmtP(scored[0].s.ret)}` : "–";
+  Galaxy.setData(scored);
+  $("ovTop5").innerHTML = scored.slice(0, 5).map((x, i) => {
+    const eq = A_DEP * (1 + x.s.ret / 100);
+    return `<tr><td>${i+1}</td><td><b>${x.g.id}</b> ${A_desc(x.g)}</td><td>${x.g.tf}</td><td class="${eq >= A_DEP ? "up" : "down"}"><b>$${eq.toFixed(0)}</b> (${fmtP(x.s.ret)})</td><td><div class="hbar"><i style="width:${Math.min(100, Math.abs(x.s.ret) / 2).toFixed(0)}%${x.s.ret < 0 ? ";background:linear-gradient(90deg,#e0806e,#d3c95e)" : ""}"></i></div></td><td>${x.s.trades}</td><td>${x.s.inPos ? '<span class="pill tealp">LONG</span>' : '<span class="pill refp">FLAT</span>'}</td></tr>`;
+  }).join("");
+}
+function renderOverview() {
+  const d = state.data, n = d.length - 1;
+  const px = state.price ? state.price.last : d[n][4];
+  const drop24 = (d[n][4] / d[n - 24][4] - 1) * 100;
+  $("ovPrice").textContent = "$" + px.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  $("ovPriceD").innerHTML = state.price ? `24h <span class="${state.price.pct >= 0 ? "up" : "down"}">${fmtP(state.price.pct)}</span>` : "–";
+  const R = replay(state.data, state.lev);
+  $("ovS1Eq").textContent = fmtUSD(R.equity);
+  let s1st;
+  if (R.openTrade) s1st = "Grid position open";
+  else if (R.waiting) s1st = "Triggered · awaiting stabilization";
+  else s1st = `Monitoring · ${(drop24 + 8).toFixed(1)} pt to trigger`;
+  $("ovS1St").textContent = s1st;
+  $("ovS1Box").innerHTML = `
+    <div class="k">Status</div><div class="v">${s1st}</div>
+    <div class="k">Account equity</div><div class="v">${fmtUSD(R.equity)} (${fmtP((R.equity/CFG.capital0-1)*100)})</div>
+    <div class="k">24h change / trigger line</div><div class="v">${fmtP(drop24)} / -8%</div>
+    <div class="k">Closed in account</div><div class="v">${R.liveClosed.length} trades</div>
+    <div class="k">Leverage</div><div class="v">${state.lev}x futures</div>
+    <div style="grid-column:1/-1;margin-top:6px" class="hrow"><span class="lb">Trigger progress</span><div class="hbar"><i style="width:${Math.min(100, Math.max(0, drop24 / -8 * 100)).toFixed(0)}%"></i></div><span class="pv">${fmtP(drop24)} / -8%</span></div>`;
+  const pe = state.priceEth ? state.priceEth.last : null;
+  if (state.daily && state.ethDaily && pe) {
+    const sr = srLeg(state.daily, px, [14, 14, 3, 5], "SR·BTC");
+    const ma = maLeg(state.daily, "MA·BTC");
+    const ethMa = maLeg(state.ethDaily, "MA·ETH");
+    const srEq = subEquity(sr, px, CFG.SR_CAP), maEq = subEquity(ma, px, CFG.MA_CAP), ethEq = subEquity(ethMa, pe, CFG.ETH_CAP);
+    const tot = srEq + maEq + ethEq;
+    $("ovS2Eq").textContent = fmtUSD(tot);
+    const stTxt = l => l.pos ? "long" : "flat";
+    $("ovS2St").textContent = `SR ${stTxt(sr)} · MA ${stTxt(ma)} · ETH ${stTxt(ethMa)}`;
+    $("ovS2Box").innerHTML = `
+      <div class="k">StochRSI W</div><div class="v">${sr.pos ? "● In position " + fmtP((px/sr.entry.p-1)*100) : "○ Flat"} · ${fmtUSD(srEq)}</div>
+      <div class="k">BTC MA 10/150</div><div class="v">${ma.pos ? "● In position " + fmtP((px/ma.entry.p-1)*100) : "○ Flat"} · ${fmtUSD(maEq)}</div>
+      <div class="k">ETH MA 10/150</div><div class="v">${ethMa.pos ? "● In position " + fmtP((pe/ethMa.entry.p-1)*100) : "○ Flat"} · ${fmtUSD(ethEq)}</div>
+      <div class="k">Total · from $10k</div><div class="v">${fmtUSD(tot)} (${fmtP((tot/10000-1)*100)})</div>
+      <div class="k">Watchlist</div><div class="v">B / C / D in parallel</div>
+      <div style="grid-column:1/-1;margin-top:6px;display:flex;flex-direction:column;gap:7px">
+        <div class="hrow"><span class="lb">StochRSI W</span><div class="hbar"><i style="width:${Math.min(100, srEq / CFG.SR_CAP * 50).toFixed(0)}%"></i></div><span class="pv">${fmtUSD(srEq)}</span></div>
+        <div class="hrow"><span class="lb">BTC MA 10/150</span><div class="hbar"><i style="width:${Math.min(100, maEq / CFG.MA_CAP * 50).toFixed(0)}%"></i></div><span class="pv">${fmtUSD(maEq)}</span></div>
+        <div class="hrow"><span class="lb">ETH MA 10/150</span><div class="hbar"><i style="width:${Math.min(100, ethEq / CFG.ETH_CAP * 50).toFixed(0)}%"></i></div><span class="pv">${fmtUSD(ethEq)}</span></div>
+        <div class="segbar" style="margin-top:2px"><i style="width:${(srEq/tot*100).toFixed(1)}%;background:#8fd694"></i><i style="width:${(maEq/tot*100).toFixed(1)}%;background:#a9d98f"></i><i style="width:${(ethEq/tot*100).toFixed(1)}%;background:#c9d64f"></i></div>
+        <div style="display:flex;gap:14px;font-size:10px;color:var(--muted)"><span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#8fd694;margin-right:5px"></i>StochRSI ${(srEq/tot*100).toFixed(0)}%</span><span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#a9d98f;margin-right:5px"></i>BTC MA ${(maEq/tot*100).toFixed(0)}%</span><span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#c9d64f;margin-right:5px"></i>ETH MA ${(ethEq/tot*100).toFixed(0)}%</span></div>
+      </div>`;
+  }
+  renderOverviewArena();
+}
+/* ================= Charts ================= */
+function lineChart(el, series, opts) {
+  const W = el.clientWidth || 640, H = opts.h || 260, padL = 52, padR = 10, padT = 12, padB = 22;
+  const all = series.flatMap(s => s.pts);
+  if (!all.length) { el.innerHTML = '<div class="loading">No data</div>'; return; }
+  const xs = all.map(p => p[0]), ys = all.map(p => p[1]);
+  let x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  if (opts.hlines) for (const h of opts.hlines) { y0 = Math.min(y0, h.v); y1 = Math.max(y1, h.v); }
+  if (y1 - y0 < Math.abs(y1) * 0.01 + 1) { const mid = (y0 + y1) / 2; y0 = mid - Math.max(Math.abs(mid) * 0.02, 1); y1 = mid + Math.max(Math.abs(mid) * 0.02, 1); }
+  const yr = (y1 - y0) || 1; y0 -= yr * 0.06; y1 += yr * 0.08;
+  const X = t => padL + (t - x0) / ((x1 - x0) || 1) * (W - padL - padR);
+  const Y = v => padT + (1 - (v - y0) / (y1 - y0)) * (H - padT - padB);
+  const fmt = opts.fmt || (v => v.toFixed(0));
+  const uid = "g" + Math.abs((x0 + H + W) | 0).toString(36);
+  let g = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">`;
+  g += `<defs><linearGradient id="${uid}" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="${series[0].color}" stop-opacity="0.28"/>
+    <stop offset="100%" stop-color="${series[0].color}" stop-opacity="0"/></linearGradient></defs>`;
+  for (let k = 0; k <= 4; k++) {
+    const v = y0 + (y1 - y0) * k / 4, y = Y(v);
+    g += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="var(--grid)" stroke-width="1"/>`;
+    g += `<text x="${padL - 7}" y="${y + 4}" fill="var(--muted)" font-size="10" text-anchor="end" style="font-variant-numeric:tabular-nums">${fmt(v)}</text>`;
+  }
+  const days = (x1 - x0) / 86400e3;
+  const tickN = Math.min(6, Math.max(2, Math.floor(days / 10)));
+  for (let k = 0; k <= tickN; k++) {
+    const t = x0 + (x1 - x0) * k / tickN, x = X(t);
+    const d = new Date(t);
+    g += `<text x="${x}" y="${H - 6}" fill="var(--muted)" font-size="10" text-anchor="middle">${d.getUTCMonth() + 1}/${d.getUTCDate()}</text>`;
+  }
+  if (opts.band) {
+    const yA = Y(opts.band.hi), yB = Y(opts.band.lo), xA = X(opts.band.from), xB = X(x1);
+    g += `<rect x="${xA}" y="${yA}" width="${xB - xA}" height="${yB - yA}" fill="rgba(139,92,246,0.08)" rx="4"/>`;
+  }
+  if (opts.hlines) for (const h of opts.hlines) {
+    const y = Y(h.v), xA = h.from ? X(h.from) : padL;
+    g += `<line x1="${xA}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="${h.color}" stroke-width="1" ${h.dash ? 'stroke-dasharray="4 4"' : ''} opacity="${h.op || 0.85}"/>`;
+    if (h.label) g += `<text x="${W - padR - 3}" y="${y - 4}" fill="${h.color}" font-size="9.5" text-anchor="end">${h.label}</text>`;
+  }
+  series.forEach((s, si) => {
+    const d = s.pts.map((p, idx) => (idx ? "L" : "M") + X(p[0]).toFixed(1) + " " + Y(p[1]).toFixed(1)).join("");
+    if (si === 0 && opts.area !== false) {
+      const dA = d + `L${X(s.pts[s.pts.length - 1][0]).toFixed(1)} ${H - padB}L${X(s.pts[0][0]).toFixed(1)} ${H - padB}Z`;
+      g += `<path d="${dA}" fill="url(#${uid})" stroke="none"/>`;
+    }
+    g += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="${s.w || 2}" stroke-linejoin="round" style="filter:drop-shadow(0 0 6px color-mix(in srgb, ${s.color} 60%, transparent))"/>`;
+  });
+  if (opts.markers) for (const m of opts.markers) {
+    const nearest = series[0].pts.reduce((a, p) => Math.abs(p[0] - m.ts) < Math.abs(a[0] - m.ts) ? p : a);
+    g += `<circle cx="${X(m.ts)}" cy="${Y(nearest[1])}" r="4.5" fill="${m.color}" stroke="var(--bg)" stroke-width="2" style="filter:drop-shadow(0 0 6px ${m.color})"/>`;
+  }
+  g += `<line id="ch" x1="0" y1="${padT}" x2="0" y2="${H - padB}" stroke="rgba(167,139,250,.5)" stroke-width="1" style="display:none"/>`;
+  g += `</svg>`;
+  el.innerHTML = g + '<div class="tt"></div>';
+  const svg = el.querySelector("svg"), tt = el.querySelector(".tt"), ch = el.querySelector("#ch");
+  svg.addEventListener("mousemove", e => {
+    const r = svg.getBoundingClientRect();
+    const mx = (e.clientX - r.left) * (W / r.width);
+    const t = x0 + (mx - padL) / (W - padL - padR) * (x1 - x0);
+    const pts = series[0].pts;
+    let best = pts[0]; for (const p of pts) if (Math.abs(p[0] - t) < Math.abs(best[0] - t)) best = p;
+    ch.setAttribute("x1", X(best[0])); ch.setAttribute("x2", X(best[0])); ch.style.display = "block";
+    const d = new Date(best[0]);
+    tt.innerHTML = `${d.getUTCMonth() + 1}/${d.getUTCDate()} ${String(d.getUTCHours()).padStart(2, "0")}:00 UTC · <b>${fmt(best[1])}</b>`;
+    tt.style.display = "block";
+    const bx = (X(best[0]) / W) * r.width;
+    tt.style.left = Math.min(bx + 12, r.width - tt.offsetWidth - 8) + "px";
+    tt.style.top = "8px";
+  });
+  svg.addEventListener("mouseleave", () => { tt.style.display = "none"; ch.style.display = "none"; });
+}
+function gaugeChart(el, frac) {
+  const W = 200, H = 128, cx = 100, cy = 108, R = 82, th = 13;
+  const arc = (r, f0, f1) => {
+    const px = a => [cx + r * Math.cos(a), cy - r * Math.sin(a)];
+    const s = Math.PI * (1 - f0), e = Math.PI * (1 - f1);
+    const [sx, sy] = px(s), [ex, ey] = px(e);
+    return `M ${sx.toFixed(1)} ${sy.toFixed(1)} A ${r} ${r} 0 0 1 ${ex.toFixed(1)} ${ey.toFixed(1)}`;
+  };
+  const col = frac >= 1 ? "var(--red)" : frac > 0.6 ? "var(--orange)" : frac > 0.3 ? "var(--gold)" : "var(--green)";
+  let g = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">`;
+  g += `<path d="${arc(R, 0, 1)}" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="${th}" stroke-linecap="round"/>`;
+  if (frac > 0.005) g += `<path d="${arc(R, 0, Math.min(frac, 1))}" fill="none" stroke="${col}" stroke-width="${th}" stroke-linecap="round" style="filter:drop-shadow(0 0 8px color-mix(in srgb, ${col} 70%, transparent))"/>`;
+  for (const f of [0, .25, .5, .75, 1]) {
+    const a = Math.PI * (1 - f);
+    const x1 = cx + (R - th - 4) * Math.cos(a), y1 = cy - (R - th - 4) * Math.sin(a);
+    const x2 = cx + (R - th - 9) * Math.cos(a), y2 = cy - (R - th - 9) * Math.sin(a);
+    g += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="var(--muted)" stroke-width="1.5" opacity=".5"/>`;
+  }
+  g += `</svg>`;
+  el.innerHTML = g;
+}
+function donutChart(el, segs) {
+  const W = 120, H = 120, cx = 60, cy = 60, R = 46, th = 15;
+  const tot = segs.reduce((s, x) => s + x.v, 0) || 1;
+  let acc = 0, g = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">`;
+  const C = 2 * Math.PI * R;
+  g += `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="${th}"/>`;
+  for (const s of segs) {
+    const f = s.v / tot;
+    if (f <= 0) continue;
+    const dash = Math.max(0, f * C - 2), gap = C - dash;
+    const rot = acc / tot * 360 - 90;
+    g += `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${s.color}" stroke-width="${th}" stroke-linecap="round"
+      stroke-dasharray="${dash} ${gap}" transform="rotate(${rot} ${cx} ${cy})" style="filter:drop-shadow(0 0 5px color-mix(in srgb, ${s.color} 50%, transparent))"/>`;
+    acc += s.v;
+  }
+  const main = segs[0], pct = Math.round(main.v / tot * 100);
+  g += `<text x="${cx}" y="${cy - 2}" fill="var(--ink)" font-size="20" font-weight="750" text-anchor="middle">${pct}%</text>`;
+  g += `<text x="${cx}" y="${cy + 15}" fill="var(--muted)" font-size="9" text-anchor="middle">${main.label}</text>`;
+  g += `</svg>`;
+  el.innerHTML = g;
+}
+
+/* ================= Render ================= */
+const $ = id => document.getElementById(id);
+const fmtUSD = v => "$" + v.toLocaleString("en-US", { maximumFractionDigits: 0 });
+const fmtP = v => (v >= 0 ? "+" : "") + v.toFixed(2) + "%";
+function legBadge(pos) { return pos ? '<span class="pill tealp">LONG</span>' : '<span class="pill refp">FLAT · awaiting signal</span>'; }
+function renderS1() {
+  const R = replay(state.data, state.lev);
+  const d = state.data, n = d.length - 1, px = state.price ? state.price.last : d[n][4];
+  const drop24 = (d[n][4] / d[n - 24][4] - 1) * 100;
+  $("tPrice").textContent = "$" + px.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  $("tPriceD").innerHTML = state.price ? `24h <span class="${state.price.pct >= 0 ? "up" : "down"}">${fmtP(state.price.pct)}</span> · H ${fmtUSD(state.price.high)} · L ${fmtUSD(state.price.low)}` : "–";
+  $("tDrop").innerHTML = `<span class="${drop24 <= -8 ? "down" : ""}">${fmtP(drop24)}</span>`;
+  $("tDropD").textContent = drop24 <= -8 ? "Trigger line crossed! Awaiting stabilization confirmation" : `${(drop24 + 8).toFixed(2)} pt to the -8% trigger line`;
+  let stTxt, stCol, stD;
+  if (R.openTrade) { stTxt = "In position · Grid running"; stCol = "var(--vio-2)"; const hrs = Math.round((d[n][0] - R.openTrade.entryTs) / 3600e3); stD = `Running ${Math.floor(hrs / 24)}d ${hrs % 24}h / 30-day cap`; }
+  else if (R.waiting) { stTxt = "Triggered · awaiting stabilization"; stCol = "var(--gold)"; stD = `Confirm at: ${new Date(R.waiting.readyAt).toLocaleString("en-GB", { timeZone: "Asia/Kuala_Lumpur" })}`; }
+  else { stTxt = "Monitoring · awaiting signal"; stCol = "var(--ink-2)"; stD = "~3–4 triggers per year historically"; }
+  $("tState").innerHTML = `<span style="color:${stCol}">● ${stTxt}</span>`;
+  $("tStateD").textContent = stD;
+  $("tEq").textContent = fmtUSD(R.equity);
+  const totRet = (R.equity / CFG.capital0 - 1) * 100;
+  $("tRet").innerHTML = `<span class="${totRet >= 0 ? "up" : "down"}">${fmtP(totRet)}</span>`;
+  const wins = R.liveClosed.filter(t => t.ret > 0).length;
+  $("tRetD").textContent = `${R.liveClosed.length} closed in account · ${wins} wins`;
+  const skim = $("skimBanner");
+  if (R.equity >= CFG.capital0 * 2) { skim.className = "banner warn"; skim.textContent = `⚑ Profit-skim alert: Strategy 1 account reached 2x principal (${fmtUSD(R.equity)}). Per discipline, withdraw ${fmtUSD(R.equity - CFG.capital0)} to lock in profits.`; }
+  else skim.className = "banner";
+  const prog = Math.max(0, Math.min(1.15, drop24 / -8));
+  gaugeChart($("gauge"), prog);
+  $("gaugeVal").innerHTML = `<span style="color:${prog >= 1 ? "var(--red)" : "var(--ink)"}">${fmtP(drop24)}</span>`;
+  $("gaugeSub").innerHTML = prog >= 1 ? "Trigger line crossed<br>State machine in stabilization confirmation" : `Progress ${Math.round(prog * 100)}% · Trigger requires a -8% drop within 24h`;
+  const from = d[n][0] - 60 * 86400e3;
+  const pts = d.filter(r => r[0] >= from).map(r => [r[0], r[4]]);
+  const markers = [];
+  for (const t of R.trades) { if (t.trigTs >= from) markers.push({ ts: t.trigTs, color: "var(--orange)" }); if (t.entryTs >= from) markers.push({ ts: t.entryTs, color: "var(--green)" }); }
+  const hl = [];
+  let bandOpt = null;
+  if (R.openTrade) {
+    hl.push({ v: R.openTrade.hi, color: "var(--green)", label: "Upper " + fmtUSD(R.openTrade.hi), op: .7 });
+    hl.push({ v: R.openTrade.lo, color: "var(--green)", label: "Lower " + fmtUSD(R.openTrade.lo), op: .7 });
+    hl.push({ v: R.openTrade.sl, color: "var(--red)", dash: true, label: "SL " + fmtUSD(R.openTrade.sl) });
+    bandOpt = { lo: R.openTrade.lo, hi: R.openTrade.hi, from: Math.max(R.openTrade.entryTs, from) };
+    $("gridTag").textContent = `· Grid ${fmtUSD(R.openTrade.lo)} – ${fmtUSD(R.openTrade.hi)} · ${R.openTrade.nL - 1} levels`;
+  } else $("gridTag").textContent = "";
+  lineChart($("priceChart"), [{ pts, color: "#a78bfa", w: 2 }], { h: 265, fmt: v => "$" + (v / 1000).toFixed(1) + "k", markers, hlines: hl, band: bandOpt });
+  const eqPts = [[CFG.ACCOUNT_START, CFG.capital0]];
+  let run = CFG.capital0;
+  for (const t of R.trades.filter(t => t.isLive && !t.open).sort((a, b) => a.entryTs - b.entryTs)) { run = run - t.cap + t.eqNow; eqPts.push([d[Math.min(t.endIdx, n)][0], run]); }
+  if (R.openTrade && R.openTrade.isLive) eqPts.push([d[n][0], R.equity]); else eqPts.push([d[n][0], run]);
+  lineChart($("eqChart"), [{ pts: eqPts, color: "#34d399", w: 2 }], { h: 180, fmt: v => "$" + v.toFixed(0) });
+  const closed = R.trades.filter(t => !t.open);
+  const w = closed.filter(t => t.ret > 0).length, l = closed.length - w;
+  donutChart($("donut"), [{ v: w, color: "var(--green)", label: "Win rate" }, { v: l, color: "var(--red)", label: "" }]);
+  $("donutLeg").innerHTML = `<span><i style="background:var(--green)"></i>Profit ${w} trades</span><span><i style="background:var(--red)"></i>Loss ${l} trades</span><span style="color:var(--muted)">${closed.length} completed signals total</span>`;
+  if (R.openTrade) {
+    const t = R.openTrade;
+    $("posBody").innerHTML = `<div class="params">
+      <div class="k">Entry price</div><div class="v">${fmtUSD(t.entry)}</div>
+      <div class="k">Current equity</div><div class="v">${fmtUSD(t.eqNow)} (${fmtP(t.ret * 100)})</div>
+      <div class="k">Levels held</div><div class="v">${t.held} / ${t.nL - 1}</div>
+      <div class="k">BTC held</div><div class="v">${t.heldQty.toFixed(5)}</div>
+      <div class="k">Grid fills</div><div class="v">${t.fills} fills</div>
+      <div class="k">SL price</div><div class="v" style="color:var(--red)">${fmtUSD(t.sl)}</div>
+      <div class="k">Distance to SL</div><div class="v">${((px / t.sl - 1) * 100).toFixed(1)}%</div>
+      <div class="k">Max unrealized loss</div><div class="v">${fmtP((t.minEq / t.cap - 1) * 100)}</div>
+    </div>`;
+  } else {
+    $("posBody").innerHTML = `<div style="color:var(--muted);padding:18px 0;text-align:center">Flat · standing by<br><span style="font-size:10.5px">On trigger, auto-opens a 25-level grid at spot ±10%</span></div>`;
+  }
+  const rows = R.trades.slice().reverse().map(t => {
+    const dur = Math.round((d[Math.min(t.endIdx, n)][0] - t.entryTs) / 3600e3);
+    const durTxt = `${Math.floor(dur / 24)}d${dur % 24}h`;
+    const st = t.open ? '<span class="pill live">LONG</span>' : (t.liq ? '<span class="pill loss">Liquidated</span>' : `<span class="pill ${t.ret > 0 ? "win" : "loss"}">${t.endReason}</span>`);
+    const contrib = t.isLive ? fmtUSD(t.eqNow - t.cap) : '<span class="pill refp">Replay</span>';
+    const cls = t.open ? "open-row" : (t.isLive ? "" : "ref");
+    return `<tr class="${cls}"><td>${new Date(t.trigTs).toISOString().slice(0, 10)}</td><td>${fmtUSD(t.entry)}</td><td>${st}</td><td>${durTxt}</td><td>${t.fills}</td><td class="${t.ret >= 0 ? "up" : "down"}">${fmtP(t.ret * 100)}</td><td>${contrib}</td></tr>`;
+  });
+  $("logBody").innerHTML = rows.join("") || '<tr><td colspan="7" style="text-align:center;color:var(--muted)">No signals yet</td></tr>';
+  $("paramGrid").innerHTML = `
+    <div class="k">Starting capital</div><div class="v">$5,000</div>
+    <div class="k">Leverage</div><div class="v">${state.lev}x ${state.lev === 1 ? "(spot)" : "(futures)"}</div>
+    <div class="k">Trigger condition</div><div class="v">24h ≤ -8%</div>
+    <div class="k">Stabilization confirm</div><div class="v">≥ low +1% after 6h</div>
+    <div class="k">Grid range</div><div class="v">Spot ±10%</div>
+    <div class="k">Grid density</div><div class="v">0.8% per level</div>
+    <div class="k">SL</div><div class="v">Range lower edge -3%</div>
+    <div class="k">Max holding</div><div class="v">Force close at 30 days</div>
+    <div class="k">Fees / slippage</div><div class="v">0.04% / 0.3%</div>
+    <div class="k">Funding rate</div><div class="v">≈11%/yr (leverage only)</div>`;
+  $("levNote").textContent = LEV_RISK[state.lev];
+}
+function renderS2() {
+  const px = state.price ? state.price.last : null;
+  const pe = state.priceEth ? state.priceEth.last : null;
+  if (!state.daily || !state.ethDaily || !px || !pe) return;
+  $("p2Btc").textContent = fmtUSD(px);
+  $("p2BtcD").innerHTML = `24h <span class="${state.price.pct >= 0 ? "up" : "down"}">${fmtP(state.price.pct)}</span>`;
+  $("p2Eth").textContent = "$" + pe.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  $("p2EthD").innerHTML = `24h <span class="${state.priceEth.pct >= 0 ? "up" : "down"}">${fmtP(state.priceEth.pct)}</span>`;
+  const sr = srLeg(state.daily, px, [14, 14, 3, 5], "SR·BTC");
+  const ma = maLeg(state.daily, "MA·BTC");
+  const ethMa = maLeg(state.ethDaily, "MA·ETH");
+  const cand = srLeg(state.daily, px, [1, 2, 19, 14], "Candidate B");
+  const srEq = subEquity(sr, px, CFG.SR_CAP);
+  const maEq = subEquity(ma, px, CFG.MA_CAP);
+  const ethEq = subEquity(ethMa, pe, CFG.ETH_CAP);
+  const candEq = subEquity(cand, px, CFG.CAND_CAP);
+  const btcTot = srEq + maEq;
+  $("s2BtcEq").textContent = fmtUSD(btcTot);
+  $("s2EthEq").textContent = fmtUSD(ethEq);
+  const totRet = ((btcTot + ethEq) / 10000 - 1) * 100;
+  $("s2TotRet").innerHTML = `<span class="${totRet >= 0 ? "up" : "down"}">${fmtP(totRet)}</span>`;
+  const srPnl = sr.pos && sr.entry ? (px / sr.entry.p - 1) * 100 : null;
+  $("s2SrBox").innerHTML = `<div class="nm">BTC · StochRSI weekly (14,14,3,5) ${legBadge(sr.pos)}</div>
+    <div class="params">
+      <div class="k">K / D</div><div class="v">${sr.K !== null ? sr.K.toFixed(1) : "–"} / ${sr.D !== null ? sr.D.toFixed(1) : "–"}</div>
+      ${sr.pos ? `
+      <div class="k">Entry</div><div class="v">${sr.entry.d} @ ${fmtUSD(sr.entry.p)}</div>
+      <div class="k">Unrealized P&L</div><div class="v ${srPnl >= 0 ? "up" : "down"}">${fmtP(srPnl)}</div>
+      <div class="k">Disaster SL (-20%)</div><div class="v" style="color:var(--red)">${fmtUSD(sr.slPrice)}</div>` : `
+      <div class="k">Status</div><div class="v">${sr.K !== null && sr.D !== null && sr.K > sr.D ? "K above D · awaiting pullback golden cross" : "Awaiting K cross above D (weekly close confirm)"}</div>`}
+      <div class="k">Sub-account ($2,500)</div><div class="v">${fmtUSD(srEq)}</div>
+    </div>`;
+  const maPnl = ma.pos && ma.entry ? (px / ma.entry.p - 1) * 100 : null;
+  const maGap = ma.fast && ma.slow ? (ma.fast / ma.slow - 1) * 100 : null;
+  $("s2MaBox").innerHTML = `<div class="nm">BTC · MA 10/150 daily ${legBadge(ma.pos)}</div>
+    <div class="params">
+      <div class="k">MA10 / MA150</div><div class="v">${ma.fast ? fmtUSD(ma.fast) : "–"} / ${ma.slow ? fmtUSD(ma.slow) : "–"}</div>
+      <div class="k">Fast vs slow gap</div><div class="v ${maGap >= 0 ? "up" : "down"}">${maGap !== null ? fmtP(maGap) : "–"}</div>
+      ${ma.pos ? `
+      <div class="k">Entry</div><div class="v">${ma.entry.d} @ ${fmtUSD(ma.entry.p)}</div>
+      <div class="k">Unrealized P&L</div><div class="v ${maPnl >= 0 ? "up" : "down"}">${fmtP(maPnl)}</div>` : `
+      <div class="k">Status</div><div class="v">Awaiting golden cross (daily close confirm)</div>`}
+      <div class="k">Sub-account ($2,500)</div><div class="v">${fmtUSD(maEq)}</div>
+    </div>`;
+  const ePnl = ethMa.pos && ethMa.entry ? (pe / ethMa.entry.p - 1) * 100 : null;
+  const eGap = ethMa.fast && ethMa.slow ? (ethMa.fast / ethMa.slow - 1) * 100 : null;
+  $("s2EthBox").innerHTML = `<div class="nm">ETH · MA 10/150 daily ${legBadge(ethMa.pos)}</div>
+    <div class="params">
+      <div class="k">MA10 / MA150</div><div class="v">${ethMa.fast ? "$" + ethMa.fast.toFixed(0) : "–"} / ${ethMa.slow ? "$" + ethMa.slow.toFixed(0) : "–"}</div>
+      <div class="k">Fast vs slow gap</div><div class="v ${eGap >= 0 ? "up" : "down"}">${eGap !== null ? fmtP(eGap) : "–"}</div>
+      ${ethMa.pos ? `
+      <div class="k">Entry</div><div class="v">${ethMa.entry.d} @ $${ethMa.entry.p.toFixed(0)}</div>
+      <div class="k">Unrealized P&L</div><div class="v ${ePnl >= 0 ? "up" : "down"}">${fmtP(ePnl)}</div>` : `
+      <div class="k">Status</div><div class="v">Awaiting golden cross (daily close confirm)</div>`}
+      <div class="k">Account ($5,000)</div><div class="v">${fmtUSD(ethEq)}</div>
+    </div>`;
+  // watchlist: three virtual candidates
+  const roc = weeklyRegimeLeg(state.daily, px, "ROC4", (wc, i) => i >= 4 && wc[i] > wc[i - 4]);
+  const rsiL = (() => {
+    const { weeks, forming } = s2Weekly(state.daily);
+    const wDone = forming ? weeks.slice(0, -1) : weeks;
+    const wc = wDone.map(r => r[4]);
+    const R = s2Rsi(wc, 14);
+    const trades = []; let pos = 0, entry = null;
+    for (let i = 1; i < wDone.length; i++) {
+      const want = R[i] !== null && R[i] > 50 ? 1 : 0;
+      if (want !== pos) {
+        if (want === 1) entry = { d: iso(wDone[i][0]), p: wc[i] };
+        else if (entry) trades.push({ sys: "RSI50", in: entry.d, out: iso(wDone[i][0]), pIn: entry.p, pOut: wc[i], sl: false });
+        pos = want;
+      }
+    }
+    return { pos, entry, trades };
+  })();
+  const rocEq = subEquity(roc, px, CFG.CAND_CAP);
+  const rsiEq = subEquity(rsiL, px, CFG.CAND_CAP);
+  const rocNow = rocReading(state.daily);
+  const rsiNow = rsiReading(state.daily);
+  const watchRow = (title, badge, leg, eq, reading) => {
+    const pnl = leg.pos && leg.entry ? (px / leg.entry.p - 1) * 100 : null;
+    const rec = leg.trades.length ? `${leg.trades.length} trades · ${leg.trades.filter(t => t.pOut > t.pIn).length} wins` : "None yet";
+    return `<div class="sys-box"><div class="nm">${title} <span class="pill goldp">${badge}</span> ${legBadge(leg.pos)}</div>
+      <div class="params">
+        <div class="k">Reading</div><div class="v">${reading}</div>
+        ${leg.pos && leg.entry ? `<div class="k">Entry</div><div class="v">${leg.entry.d} @ ${fmtUSD(leg.entry.p)}</div>
+        <div class="k">Unrealized P&L</div><div class="v ${pnl >= 0 ? "up" : "down"}">${fmtP(pnl)}</div>` : ``}
+        <div class="k">Virtual account · Record</div><div class="v">${fmtUSD(eq)} · ${rec}</div>
+      </div></div>`;
+  };
+  $("watchList").innerHTML =
+    watchRow("StochRSI (1,2,19,14)", "Candidate B", cand, candEq, `K ${cand.K !== null ? cand.K.toFixed(1) : "–"} / D ${cand.D !== null ? cand.D.toFixed(1) : "–"}`) +
+    watchRow("ROC 4-week momentum", "Candidate C", roc, rocEq, rocNow !== null ? `4-wk change ${fmtP(rocNow)} (hold if >0)` : "–") +
+    watchRow("RSI weekly >50", "Candidate D", rsiL, rsiEq, rsiNow !== null ? `RSI ${rsiNow.toFixed(1)} (hold if >50)` : "–");
+  const startIso2 = iso(CFG.ACCOUNT_START);
+  const allT = [...sr.trades, ...ma.trades, ...ethMa.trades]
+    .sort((a, b) => (b.out === "Live SL" ? "9999" : b.out).localeCompare(a.out === "Live SL" ? "9999" : a.out)).slice(0, 12);
+  $("s2Log").innerHTML = allT.map(t => {
+    const g = (t.pOut / t.pIn - 1) * 100;
+    const live = t.out === "Live SL" || t.out >= startIso2;
+    const sysCell = t.sys + (t.sl ? ' <span class="pill loss">SL</span>' : "");
+    return `<tr class="${live ? "" : "ref"}"><td>${sysCell}</td><td>${t.in}</td><td>${t.out}</td><td>${fmtUSD(t.pIn)}</td><td>${fmtUSD(t.pOut)}</td><td class="${g >= 0 ? "up" : "down"}">${fmtP(g)}</td></tr>`;
+  }).join("") || '<tr><td colspan="6" style="text-align:center;color:var(--muted)">No trades yet</td></tr>';
+}
+function render() { renderOverview(); renderS1(); renderS2(); }
+function buildLevRow() {
+  $("levRow").innerHTML = LEVS.map(l => `<button class="lev-btn ${l === state.lev ? "on" : ""}" data-l="${l}">${l}x</button>`).join("");
+  $("levRow").querySelectorAll("button").forEach(b => b.addEventListener("click", () => { state.lev = +b.dataset.l; buildLevRow(); render(); }));
+}
+function buildTabs() {
+  const tabs = $("tabs");
+  tabs.style.display = "flex";
+  tabs.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+    tabs.querySelectorAll("button").forEach(x => x.classList.remove("on"));
+    b.classList.add("on");
+    $("page1").classList.toggle("on", b.dataset.p === "1");
+    $("page2").classList.toggle("on", b.dataset.p === "2");
+    render();
+  }));
+}
+
+/* ================= System health checks ================= */
+const HEALTH = { lastOk: null, failStreak: 0, clockSkew: null, alert: false };
+const RNG_REF = [0.3797958354, 0.1758410509, 0.7595339064];
+function hcEngineSelfTest() {
+  try {
+    const r = A_rng(A_SEED);
+    for (let i = 0; i < 3; i++) if (Math.abs(r() - RNG_REF[i]) > 1e-9) return { ok: false, msg: "RNG sequence deviates from reference" };
+    if (state.arena && state.arena.pool.length !== A_SEATS) return { ok: false, msg: "Abnormal population size " + state.arena.pool.length };
+    return { ok: true, msg: "RNG matches reference · population " + (state.arena ? state.arena.pool.length : "-") + " seats" };
+  } catch (e) { return { ok: false, msg: e.message }; }
+}
+function hcGaps(bars, stepMs, lookback) {
+  if (!bars || bars.length < 10) return { gaps: -1, outlier: false };
+  let gaps = 0, outlier = false;
+  const from = Math.max(1, bars.length - lookback);
+  for (let i = from; i < bars.length; i++) {
+    if (bars[i][0] - bars[i-1][0] > stepMs * 1.5) gaps++;
+    const r = bars[i][4] / bars[i-1][4] - 1;
+    if (Math.abs(r) > 0.20) outlier = true;
+  }
+  return { gaps, outlier };
+}
+async function hcClock() {
+  try {
+    const t0 = Date.now();
+    const r = await fetch("https://api.binance.com/api/v3/time").then(x => x.json());
+    const rtt = Date.now() - t0;
+    HEALTH.clockSkew = r.serverTime - (t0 + rtt / 2);
+  } catch (e) {}
+}
+function renderHealth() {
+  const el = $("hcItems");
+  if (!el) return;
+  const items = [];
+  const item = (name, ok, msg, warn) => items.push({ name, st: ok ? "ok" : (warn ? "warn" : "bad"), msg });
+  const age = HEALTH.lastOk ? (Date.now() - HEALTH.lastOk) / 1000 : Infinity;
+  item("Binance link", age < 120, HEALTH.lastOk ? `Refreshed ${Math.round(age)}s ago · fail streak ${HEALTH.failStreak}` : "No success yet", age < 600);
+  if (state.data.length) {
+    const lag = (Date.now() - state.data[state.data.length-1][0]) / 3600e3;
+    item("1h primary data", lag < 2.2, `Latest candle ${lag.toFixed(1)}h ago`, lag < 4);
+  }
+  const g1 = hcGaps(state.data, 3600e3, 500);
+  item("Data integrity (1h×500)", g1.gaps === 0, g1.gaps > 0 ? `${g1.gaps} gaps` : "No gaps", g1.gaps <= 2);
+  item("Anomaly scan", !g1.outlier, g1.outlier ? "A single candle moved >20% — verify manually" : "No >20% moves in the last 500 candles", false);
+  if (HEALTH.clockSkew !== null) {
+    const sk = Math.abs(HEALTH.clockSkew) / 1000;
+    item("Clock drift", sk < 30, `Offset ${sk.toFixed(1)}s`, sk < 120);
+  }
+  if (state.arenaBars) {
+    let worst = 0, name = "";
+    for (const [tf, bars] of Object.entries(state.arenaBars)) {
+      const lagBars = bars.length ? (Date.now() - bars[bars.length-1][0]) / A_TFMS[tf] : Infinity;
+      if (lagBars > worst) { worst = lagBars; name = tf; }
+    }
+    item("Arena data", worst < 3, worst < 900 ? `Worst lag ${name} ~${worst.toFixed(1)} bars` : "Not loaded", worst < 12);
+  } else item("Arena data", false, "Loading in background…", true);
+  const se = hcEngineSelfTest();
+  item("Engine determinism", se.ok, se.msg, false);
+  el.innerHTML = items.map(x => {
+    const col = x.st === "ok" ? "var(--green)" : x.st === "warn" ? "var(--gold)" : "var(--red)";
+    const icon = x.st === "ok" ? "✓" : x.st === "warn" ? "◐" : "✗";
+    return `<div class="gtile" style="border-color:color-mix(in srgb, ${col} 40%, transparent)"><div class="gid" style="color:${col}">${icon} ${x.name}</div>${x.msg}</div>`;
+  }).join("");
+  const bad = items.filter(x => x.st === "bad").length, warn = items.filter(x => x.st === "warn").length;
+  const ov = $("hcOverall");
+  HEALTH.alert = bad > 0;
+  if (bad) { ov.textContent = `⚠ ${bad} failing · ${warn} warnings`; ov.style.color = "var(--red)"; }
+  else if (warn) { ov.textContent = `◐ ${warn} warnings, rest OK`; ov.style.color = "var(--gold)"; }
+  else { ov.textContent = "✓ All clear · " + new Date().toLocaleTimeString("en-GB", {timeZone:"Asia/Kuala_Lumpur"}); ov.style.color = "var(--green)"; }
+}
+let titleFlip = false;
+const BASE_TITLE = document.title;
+setInterval(() => {
+  const R = state.data.length > 30 ? (() => { try { return replay(state.data, state.lev); } catch(e) { return null; } })() : null;
+  const sigAlert = R && (R.waiting || R.openTrade);
+  if (HEALTH.alert || sigAlert) {
+    titleFlip = !titleFlip;
+    document.title = titleFlip ? (HEALTH.alert ? "⚠ System alert" : "🔔 Strategy 1 signal") + " · Quant Terminal" : BASE_TITLE;
+  } else if (document.title !== BASE_TITLE) document.title = BASE_TITLE;
+}, 2000);
+
+/* ================= Boot ================= */
+async function boot() {
+  try {
+    state.data = await fetchKlines(CFG.REPLAY_START);
+    await refreshTail();
+    $("app").innerHTML = ""; $("app").className = "";
+    $("app").appendChild($("tpl").content.cloneNode(true));
+    buildLevRow(); buildTabs();
+    Galaxy.init();
+    render();
+    HEALTH.lastOk = Date.now();
+    hcClock().then(renderHealth);
+    setInterval(hcClock, 600000);
+    renderHealth();
+    loadArenaLite();
+    setInterval(loadArenaLite, 600000);
+    $("connDot").className = "dot ok";
+    $("connTxt").textContent = "Binance live · " + new Date().toLocaleTimeString("en-GB", { timeZone: "Asia/Kuala_Lumpur" });
+    state.timer = setInterval(async () => {
+      try {
+        await refreshTail(); render();
+        HEALTH.lastOk = Date.now(); HEALTH.failStreak = 0;
+        $("connDot").className = "dot ok";
+        $("connTxt").textContent = "Binance live · " + new Date().toLocaleTimeString("en-GB", { timeZone: "Asia/Kuala_Lumpur" });
+      } catch (e) { HEALTH.failStreak++; $("connDot").className = "dot err"; $("connTxt").textContent = "Reconnecting… (fail streak " + HEALTH.failStreak + ")"; }
+      renderHealth();
+    }, 30000);
+  } catch (e) {
+    $("errBanner").className = "banner err";
+    $("errBanner").textContent = "Cannot reach Binance market API (" + e.message + "). Check your network and refresh the page.";
+    $("app").innerHTML = "";
+  }
+}
+boot();
+</script>
+</body>
+</html>
