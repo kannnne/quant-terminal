@@ -685,14 +685,26 @@ function A_draw(rng, birth) {
   return { id: 'G' + String(++A_ID).padStart(3, '0'), tf, block, p, subs, sl, lev, birth, parent: null };
 }
 function A_mut(rng, parent, birth) {
-  const g = { id: 'G' + String(++A_ID).padStart(3, '0'), tf: parent.tf, block: parent.block, p: parent.p.slice(), sl: parent.sl, lev: parent.lev, birth, parent: parent.id };
+  const g = { id: 'G' + String(++A_ID).padStart(3, '0'), tf: parent.tf, block: parent.block,
+    p: parent.p.slice(), subs: parent.subs ? parent.subs.map(s => ({ block: s.block, p: s.p.slice() })) : null,
+    sl: parent.sl, lev: parent.lev, birth, parent: parent.id };
   const dice = rng();
   if (dice < 0.20) { const tfs = ['5m','15m','30m','1h']; g.tf = tfs[(tfs.indexOf(g.tf) + (rng() < 0.5 ? 1 : 3)) % 4]; }
   else if (dice < 0.40) { g.sl = A_pick(rng, [0, 0.03, 0.05, 0.10]); }
   else if (dice < 0.55) { g.lev = A_pick(rng, A_LEVS); }
-  else { const opts = A_BLOCKS[g.block].opts; const idx = Math.floor(rng() * opts.length) % opts.length;
+  else if (g.subs) {
+    const si = rng() < 0.5 ? 0 : 1;
+    const sub = g.subs[si];
+    const opts = A_BLOCKS[sub.block].opts;
+    const idx = Math.floor(rng() * opts.length) % opts.length;
+    sub.p[idx] = A_pick(rng, opts[idx]);
+    if ((sub.block === 'MA' || sub.block === 'EMA') && sub.p[0] >= sub.p[1]) sub.p[1] = Math.min(200, sub.p[0] * 3);
+  } else {
+    const opts = A_BLOCKS[g.block].opts;
+    const idx = Math.floor(rng() * opts.length) % opts.length;
     g.p[idx] = A_pick(rng, opts[idx]);
-    if ((g.block === 'MA' || g.block === 'EMA') && g.p[0] >= g.p[1]) g.p[1] = Math.min(200, g.p[0] * 3); }
+    if ((g.block === 'MA' || g.block === 'EMA') && g.p[0] >= g.p[1]) g.p[1] = Math.min(200, g.p[0] * 3);
+  }
   return g;
 }
 function A_desc(g) {
@@ -929,12 +941,17 @@ function A_replay() {
   return { pool, gen, deaths, now };
 }
 async function loadArenaLite() {
+  const el = $("ovALoad");
+  const bars = state.arenaBars || {};
   try {
-    const bars = {};
     for (const tf of ['5m','15m','30m','1h']) {
-      const start = Date.now() - A_DEPTH_DAYS[tf] * 86400e3;
-      let rows = [], t = start, guard = 0;
+      const prev = bars[tf] || [];
+      let rows = prev;
+      let t = prev.length ? prev[prev.length-1][0] + A_TFMS[tf] : Date.now() - A_DEPTH_DAYS[tf] * 86400e3;
+      let guard = 0;
+      const totalPages = Math.ceil((Date.now() - t) / (A_TFMS[tf] * 1000)) + 1;
       while (guard++ < 400) {
+        if (el && !prev.length) el.textContent = `Loading arena history… ${tf} ${Math.min(99, Math.round(guard / totalPages * 100))}%`;
         const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${tf}&startTime=${Math.floor(t)}&limit=1000`).then(x => x.json());
         if (!Array.isArray(r) || r.length === 0) break;
         for (const k of r) rows.push([k[0], +k[1], +k[2], +k[3], +k[4]]);
@@ -945,11 +962,16 @@ async function loadArenaLite() {
       bars[tf] = rows;
     }
     state.arenaBars = bars;
+  } catch (e) {
+    if (el) el.textContent = "Arena data fetch failed (will retry in 10 min): " + e.message;
+    return;
+  }
+  try {
     A_posCache.clear();
     state.arena = A_replay();
     renderOverviewArena();
   } catch (e) {
-    const el = $("ovALoad"); if (el) el.textContent = "Arena data failed to load: " + e.message;
+    if (el) el.textContent = "Arena replay error: " + e.message;
   }
 }
 /* ================= Arena Galaxy - ENERGY core (Three.js) =================
