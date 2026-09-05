@@ -321,7 +321,7 @@ function buildEvents() {
 }
 async function loadBars() {
   const from = Math.floor((state.rosters[0].frozen - H1) / M5) * M5, to = Date.now();
-  const syms = [...new Set(state.events.map(e => e.sym))];
+  const syms = [...new Set(['BTCUSDT'].concat(state.events.map(e => e.sym)))];
   const grid = []; for (let t = from; t + M5 <= to; t += M5) grid.push(t);
   state.grid = grid; state.gridIdx = new Map(grid.map((t, i) => [t, i]));
   for (const sym of syms) {
@@ -449,7 +449,7 @@ function renderRoster() {
   const act24 = new Map(); for (const e of state.events) if (e.t >= Date.now() - DAY) act24.set(e.a, (act24.get(e.a) || 0) + 1);
   $('rosterTag').textContent = `frozen ${new Date(r.frozen).toISOString().replace('T', ' ').slice(0, 16)} UTC · ${rows.length} traders · ${r.source}`;
   const show = state.showAll ? rows : rows.slice(0, 20);
-  $('roster').innerHTML = show.map(t => `<tr><td>${t.rank}</td><td><b title="${t.a}">${t.name ? t.name : short(t.a)}</b></td><td class="${t.mroi >= 0 ? 'up' : 'down'}">${t.mroi >= 0 ? '+' : ''}${(t.mroi * 100).toFixed(0)}%</td><td>${fmtUsd(t.mpnl)}</td><td>${fmtUsd(t.av)}</td><td>${t.win30 == null ? '–' : (t.win30 * 100).toFixed(0) + '%'}</td><td>${t.nFills30 ?? '–'}</td><td>${t.lev == null ? '–' : t.lev + 'x'}</td><td style="text-align:left;color:var(--muted)">${(t.coins || []).slice(0, 4).join(' ')}</td><td>${act24.get(t.a) || 0}</td></tr>`).join('');
+  $('roster').innerHTML = show.map(t => `<tr><td>${t.rank}</td><td><b title="${t.a}">${t.name ? t.name : short(t.a)}</b></td><td class="${t.mroi >= 0 ? 'up' : 'down'}">${t.mroi >= 0 ? '+' : ''}${fmtN(t.mroi * 100)}%</td><td>${fmtUsd(t.mpnl)}</td><td>${fmtUsd(t.av)}</td><td>${t.win30 == null ? '–' : (t.win30 * 100).toFixed(0) + '%'}</td><td>${t.nFills30 ?? '–'}</td><td>${t.lev == null ? '–' : t.lev + 'x'}</td><td style="text-align:left;color:var(--muted)">${(t.coins || []).slice(0, 4).join(' ')}</td><td>${act24.get(t.a) || 0}</td></tr>`).join('');
   $('rosterMore').textContent = state.showAll ? 'show top 20 only' : `show all ${rows.length}`;
   const rp = rows.reduce((s, t) => s + (t.rpnl30 || 0), 0), fees = rows.reduce((s, t) => s + (t.fee30 || 0), 0), wins = rows.filter(t => t.win30 != null);
   $('rosterNote').innerHTML = `Selection bias warning: this list is ranked by the <b>past</b> 30-day ROI, so it is a list of recent winners, not of skill. Their own realized PnL over those 30 days sums to <b>${fmtUsd(rp)}</b> after <b>${fmtUsd(fees)}</b> of fees; median win rate ${wins.length ? (wins.map(t => t.win30).sort((a, b) => a - b)[Math.floor(wins.length / 2)] * 100).toFixed(0) + '%' : '–'}. The copy bots below only count trades made <b>after</b> the freeze — no look-ahead.`;
