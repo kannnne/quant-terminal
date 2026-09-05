@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Signal Desk · News / Sentiment / On-chain · Quant Terminal</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #000;
+    --panel: rgba(255,255,255,0.035);
+    --panel-2: rgba(255,255,255,0.06);
+    --border: rgba(255,255,255,0.08);
+    --border-hi: rgba(134,201,138,0.30);
+    --ink: #f4f4fa;
+    --ink-2: #c9c8da;
+    --muted: #8f8ea8;
+    --grid: rgba(255,255,255,0.06);
+    --vio: #93c88a; --vio-2: #b0d9a5;
+    --pink: #c9d64f; --blue: #82c98f; --orange: #d3c95e; --green: #7ecf8a; --red: #e0806e; --gold: #c9d64f; --teal: #8ad6b0;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #050609; color: var(--ink); min-height: 100vh; }
+  #universe { position: fixed; inset: 0; z-index: 0; background:
+    radial-gradient(ellipse at 22% 18%, rgba(134,201,138,.07), transparent 48%),
+    radial-gradient(ellipse at 80% 82%, rgba(138,214,176,.05), transparent 50%),
+    radial-gradient(ellipse at 50% 38%, #0a0c13, #050609 72%); }
+  #stars { position: absolute; inset: 0; width: 100%; height: 100%; display: block; opacity: .9; }
+  .shell { position: relative; z-index: 1; }
+  main { padding: 22px 36px 40px; min-width: 0; max-width: 1700px; margin: 0 auto; }
+  .topbar { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; flex-wrap: wrap; }
+  .topbar h1 { font-size: 16px; font-weight: 650; }
+  .topbar .sub { font-size: 11.5px; color: var(--muted); }
+  .conn { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--ink-2);
+    padding: 6px 13px; border-radius: 999px; border: none; background: rgba(255,255,255,.07);
+    backdrop-filter: blur(14px) brightness(1.3); -webkit-backdrop-filter: blur(14px) brightness(1.3); box-shadow: inset 0 1px 0 rgba(255,255,255,.14); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 8px currentColor; }
+  .dot.ok { background: var(--green); color: var(--green); } .dot.err { background: var(--red); color: var(--red); }
+  .tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tab-btn { padding: 9px 22px; border-radius: 999px; border: none; background: rgba(255,255,255,.07);
+    color: var(--ink-2); font-size: 13px; font-weight: 650; cursor: pointer; text-decoration: none; display: inline-block;
+    backdrop-filter: blur(14px) brightness(1.3); -webkit-backdrop-filter: blur(14px) brightness(1.3);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.14); }
+  .tab-btn.on { background: linear-gradient(135deg, #93ce93, #5da96f); color: #0c130d; box-shadow: 0 0 18px rgba(134,201,138,.35); }
+  .tab-btn .mini { font-size: 10px; opacity: .75; font-weight: 500; margin-left: 6px; }
+  .tab-btn.soon { opacity: .55; cursor: default; }
+
+  .card {
+    --glow: var(--vio);
+    background: linear-gradient(150deg,
+      color-mix(in srgb, var(--glow) 5%, rgba(255,255,255,.085)),
+      rgba(16,18,16,.46) 55%,
+      color-mix(in srgb, var(--glow) 2%, rgba(255,255,255,.04)));
+    border: none; border-radius: 22px; padding: 18px 20px; position: relative; margin-bottom: 12px;
+    backdrop-filter: blur(16px) saturate(160%) brightness(1.32);
+    -webkit-backdrop-filter: blur(16px) saturate(160%) brightness(1.32);
+    box-shadow: 0 18px 60px rgba(0,0,0,.45), 0 0 80px color-mix(in srgb, var(--glow) 5%, transparent),
+      inset 0 1px 0 rgba(255,255,255,.14), inset 0 -1px 0 color-mix(in srgb, var(--glow) 8%, rgba(255,255,255,.04));
+  }
+  .card::before { content: ""; position: absolute; inset: 0; border-radius: 22px; pointer-events: none;
+    background: linear-gradient(165deg, rgba(255,255,255,.09) 0%, rgba(255,255,255,0) 30%, rgba(255,255,255,0) 72%, rgba(255,255,255,.045) 100%); }
+  .card.g-green { --glow: var(--green); } .card.g-gold { --glow: var(--gold); } .card.g-teal { --glow: var(--teal); } .card.g-red { --glow: var(--red); }
+  .card h2 { font-size: 12.5px; font-weight: 650; color: var(--ink-2); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; letter-spacing: .02em; flex-wrap: wrap; }
+  .card h2 .tag { font-size: 10px; color: var(--muted); font-weight: 500; }
+  .legend { display: flex; gap: 13px; font-size: 11px; color: var(--ink-2); margin-left: auto; }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; vertical-align: -1px; margin-right: 5px; }
+
+  .chips { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .chip { display: flex; align-items: center; gap: 12px;
+    background: linear-gradient(150deg, color-mix(in srgb, var(--c) 6%, rgba(255,255,255,.085)), rgba(16,18,16,.44) 55%, color-mix(in srgb, var(--c) 2%, rgba(255,255,255,.04)));
+    border: none; border-radius: 20px; padding: 14px 15px;
+    backdrop-filter: blur(16px) saturate(160%) brightness(1.3); -webkit-backdrop-filter: blur(16px) saturate(160%) brightness(1.3);
+    box-shadow: 0 14px 44px rgba(0,0,0,.4), 0 0 60px color-mix(in srgb, var(--c) 5%, transparent), inset 0 1px 0 rgba(255,255,255,.14); }
+  .chip .ring { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; font-size: 17px; flex-shrink: 0;
+    background: radial-gradient(circle at 32% 28%, rgba(255,255,255,.22), transparent 55%), var(--c);
+    box-shadow: 0 0 16px color-mix(in srgb, var(--c) 55%, transparent); color: #0c130d; font-weight: 800; }
+  .chip .k { font-size: 10.5px; color: var(--muted); margin-bottom: 3px; }
+  .chip .v { font-size: 16.5px; font-weight: 700; line-height: 1.1; }
+  .chip .d { font-size: 10px; color: var(--ink-2); margin-top: 2px; }
+  .up { color: var(--green); } .down { color: var(--red); } .flat { color: var(--muted); }
+
+  /* signal cards */
+  .sgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 10px; }
+  .sig { border-radius: 16px; padding: 12px 13px 10px; background: rgba(255,255,255,.035);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.09); position: relative; min-height: 132px; display: flex; flex-direction: column; }
+  .sig .k { font-size: 10.5px; color: var(--muted); display: flex; justify-content: space-between; gap: 6px; }
+  .sig .k b { color: var(--ink-2); font-weight: 600; }
+  .sig .v { font-size: 20px; font-weight: 750; margin: 4px 0 1px; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+  .sig .v small { font-size: 11px; font-weight: 600; color: var(--muted); margin-left: 5px; }
+  .sig svg { width: 100%; height: 34px; display: block; margin-top: auto; }
+  .sig .pb { height: 5px; border-radius: 99px; background: rgba(255,255,255,.08); position: relative; margin: 6px 0 5px; }
+  .sig .pb i { position: absolute; top: -2px; width: 9px; height: 9px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 8px var(--gold); transform: translateX(-50%); }
+  .sig .pb::before { content: ""; position: absolute; inset: 0; border-radius: 99px;
+    background: linear-gradient(90deg, rgba(126,207,138,.55), rgba(255,255,255,.08) 50%, rgba(224,128,110,.55)); }
+  .sig .r { font-size: 10.5px; color: var(--ink-2); line-height: 1.4; }
+  .sig .r em { font-style: normal; color: var(--gold); }
+  .sig.live { outline: 1px solid rgba(138,214,176,.25); }
+
+  .gauges { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+  .gauge { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 14px; background: rgba(255,255,255,.03); }
+  .gauge .arc { width: 64px; height: 64px; flex-shrink: 0; }
+  .gauge .t { font-size: 10.5px; color: var(--muted); }
+  .gauge .n { font-size: 18px; font-weight: 750; }
+  .gauge .s { font-size: 10.5px; color: var(--ink-2); line-height: 1.4; }
+  .read { font-size: 12.5px; line-height: 1.7; color: var(--ink-2); }
+  .read b { color: var(--ink); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: right; color: var(--muted); font-weight: 500; font-size: 10.5px; padding: 6px 9px; border-bottom: 1px solid var(--grid); letter-spacing: .04em; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  td { padding: 8px 9px; border-bottom: 1px solid var(--grid); text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: nowrap; }
+  td:first-child { color: var(--ink); }
+  td.rule { text-align: left; white-space: normal; min-width: 220px; }
+  .pill { padding: 2.5px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 650; }
+  .pill.win { background: rgba(52,211,153,.14); color: var(--green); }
+  .pill.loss { background: rgba(248,113,113,.14); color: var(--red); }
+  .pill.refp { background: var(--panel-2); color: var(--muted); }
+  .pill.goldp { background: rgba(251,191,36,.15); color: var(--gold); }
+  .hbar { height: 8px; border-radius: 99px; background: rgba(255,255,255,.09); overflow: hidden; position: relative; min-width: 110px; }
+  .hbar i { position: absolute; top: 0; bottom: 0; border-radius: 99px; display: block; }
+  .banner { border: 1px solid var(--border); border-radius: 13px; padding: 11px 15px; font-size: 12px; margin-bottom: 12px; display: none; backdrop-filter: blur(12px); }
+  .banner.warn { display: block; background: rgba(251,191,36,.08); color: var(--gold); border-color: rgba(251,191,36,.3); }
+  .banner.err  { display: block; background: rgba(248,113,113,.10); color: var(--red); border-color: rgba(248,113,113,.3); }
+  .loading { text-align: center; color: var(--muted); padding: 60px 0; font-size: 13px; }
+  footer { color: var(--muted); font-size: 10.5px; line-height: 1.65; margin-top: 14px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 1000px) { .two { grid-template-columns: 1fr; } }
+
+  .species { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+  .sp { border-radius: 12px; padding: 9px 11px; background: rgba(255,255,255,.03); font-size: 10.5px; color: var(--ink-2); line-height: 1.5; }
+  .sp b { color: var(--ink); font-size: 11px; }
+  .sp .bar { height: 6px; border-radius: 99px; background: rgba(255,255,255,.08); margin: 5px 0 3px; overflow: hidden; }
+  .sp .bar i { display: block; height: 100%; background: linear-gradient(90deg, #8fd694, #c9d64f); }
+
+  #feed { max-height: 380px; overflow-y: auto; margin: -2px -4px 0; padding: 0 4px; }
+  #feed::-webkit-scrollbar { width: 6px; } #feed::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 99px; }
+  .frow { display: grid; grid-template-columns: 78px 46px 54px 66px 1fr 78px 40px; gap: 10px; align-items: baseline; padding: 5px 6px; border-radius: 7px;
+    font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .frow:hover { background: rgba(255,255,255,.045); }
+  .frow + .frow { border-top: 1px solid rgba(255,255,255,.045); }
+  .ft { color: var(--muted); font-size: 10px; } .fg { color: var(--ink); font-weight: 700; }
+  .fa { font-weight: 700; font-size: 10px; letter-spacing: .08em; }
+  .fa-open { color: #8ad6b0; } .fa-close { color: var(--ink-2); } .fa-stop { color: #d3c95e; } .fa-liq { color: var(--red); } .fa-evo { color: var(--gold); }
+  .fm { text-align: right; font-weight: 650; color: var(--ink-2); }
+  .fw { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+  .fp { color: var(--ink-2); text-align: right; } .fl { color: var(--muted); font-size: 10px; text-align: right; }
+  @media (max-width: 760px) {
+    main { padding: 14px 12px 30px; }
+    .topbar h1 { font-size: 14px; }
+    .tab-btn { padding: 8px 13px; font-size: 12px; } .tab-btn .mini { display: none; }
+    .card { padding: 14px 14px; border-radius: 18px; }
+    .chip .ring { width: 36px; height: 36px; font-size: 14px; } .chip .v { font-size: 14.5px; }
+    .frow { grid-template-columns: 62px 42px 48px 58px 1fr; font-size: 10px; gap: 7px; } .fp, .fl { display: none; }
+    .legend { display: none; }
+    .sgrid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+    .sig .v { font-size: 17px; }
+  }
+</style>
+</head>
+<body>
+<div id="universe"><canvas id="stars"></canvas></div>
+<div class="shell"><main>
+  <div class="topbar">
+    <div>
+      <h1>Signal Desk · News / Sentiment / On-chain</h1>
+      <div class="sub">Page 1 · Derivatives positioning, crowd sentiment and on-chain flow, replayed deterministically · 50 signal bots · paper only</div>
+    </div>
+    <div class="conn"><span class="dot" id="connDot"></span><span id="connTxt">Connecting…</span></div>
+  </div>
+  <div class="tabs">
+    <a class="tab-btn" href="./">Terminal<span class="mini">Strategies + Arena</span></a>
+    <a class="tab-btn on" href="signals.html">Signal Desk<span class="mini">Page 1 · 50 bots</span></a>
+    <span class="tab-btn soon">Copy Desk<span class="mini">Page 2 · coming</span></span>
+    <span class="tab-btn soon">REKT Lab<span class="mini">Page 3 · coming</span></span>
+  </div>
+  <div class="banner" id="errBanner"></div>
+  <div id="app" class="loading">Loading snapshot history and live Binance derivatives data…</div>
+</main></div>
+
+<template id="tpl">
+  <div class="chips">
+    <div class="chip" style="--c:var(--blue)"><div class="ring">₿</div><div><div class="k">BTC / USDT · Binance</div><div class="v" id="cPrice">–</div><div class="d" id="cPriceD">–</div></div></div>
+    <div class="chip" style="--c:var(--gold)"><div class="ring">⚖</div><div><div class="k">Crowding</div><div class="v" id="cCrowd">–</div><div class="d" id="cCrowdD">funding × long/short ratio</div></div></div>
+    <div class="chip" style="--c:var(--teal)"><div class="ring">☺</div><div><div class="k">Sentiment</div><div class="v" id="cSent">–</div><div class="d" id="cSentD">fear &amp; greed × taker flow</div></div></div>
+    <div class="chip" style="--c:var(--vio)"><div class="ring">⚔</div><div><div class="k">Signal Arena</div><div class="v" id="cArena" style="font-size:13px">–</div><div class="d" id="cArenaD">–</div></div></div>
+  </div>
+
+  <div class="card g-green">
+    <h2>Market Read <span class="tag" id="readTag">–</span></h2>
+    <div class="gauges" id="gauges"></div>
+    <div class="read" id="readTxt" style="margin-top:12px">–</div>
+  </div>
+
+  <div class="card g-teal">
+    <h2>Signal Board <span class="tag">Binance USDT-M derivatives · alternative.me · CoinGecko · DefiLlama · Hyperliquid — all public, no keys</span>
+      <span class="legend"><span><i style="background:var(--green)"></i>bullish read</span><span><i style="background:var(--red)"></i>bearish read</span><span><i style="background:var(--gold)"></i>30-day percentile</span></span></h2>
+    <div class="sgrid" id="sgrid"></div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:10px" id="sgridNote">–</div>
+  </div>
+
+  <div class="card g-gold">
+    <h2>Signal Arena · Top 10 <span class="tag" id="arenaTag">–</span>
+      <span class="legend"><span><i style="background:var(--green)"></i>Profit</span><span><i style="background:var(--red)"></i>Loss</span><span><i style="background:var(--teal)"></i>In position</span></span></h2>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>#</th><th>Bot</th><th style="text-align:left">Rule</th><th>Forward equity</th><th style="min-width:110px"></th><th>Trades</th><th>Status</th></tr></thead>
+      <tbody id="top10"></tbody></table></div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:8px" id="arenaNote">–</div>
+  </div>
+
+  <div class="two">
+    <div class="card g-vio">
+      <h2>Arena · Activity Log <span class="tag" id="feedTag">–</span></h2>
+      <div id="feed"></div>
+    </div>
+    <div class="card g-teal">
+      <h2>Species Standings <span class="tag">forward return of every seated bot, grouped by signal</span></h2>
+      <div class="species" id="species"></div>
+      <div style="font-size:10.5px;color:var(--muted);margin-top:10px">Each bot = one signal rule + follow/fade mode + hold time + leverage + stop, frozen at birth. Weekly: bankrupt (≤ $500) and bottom 5 are retired; 2 seats refill by mutating a top-10 bot, the rest by random draw from the 300-bot bench.</div>
+    </div>
+  </div>
+
+  <footer id="foot">–</footer>
+</template>
+<script>
+/* ===================== PAGE 1 · SIGNAL DESK ===================== */
+const $ = id => document.getElementById(id);
+const H1 = 3600e3, DAY = 86400e3;
+const SIG_START = Date.UTC(2026, 7, 10);          // Monday UTC: first forward bar for gen-0 bots
+const SIG_SEED = 20260905;
+const S_SEATS = 50, S_KILL = 5, S_BENCH = 300, S_MUT = 2;
+const S_FEE = 0.0007, S_DEP = 1000, S_RUIN = 500, S_FUND_H = 0.0000125;
+const S_LEVS = [1,1,1,2,2,2,3,3,3,5,5,10,20,50];
+const S_HOLDS = [4, 12, 24, 48, 96, 168];
+const S_SLS = [0, 0.03, 0.05, 0.10];
+const PRICE_FROM = Date.UTC(2026, 6, 1);           // 1h price history for indicator warm-up
+const PCT_WIN = 720, PCT_MIN = 72;                  // 30-day rolling percentile, 3-day minimum
+const FIRST_SNAPSHOT = 'data/signals-2026-09-05.json';
+const SNAP_MONDAY0 = Date.UTC(2026, 8, 7);          // weekly snapshots are named by their Monday
+
+function S_rng(a) { return function() { a |= 0; a = a + 0x6D2B79F5 | 0;
+  let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+  return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const pick = (rng, arr) => arr[Math.floor(rng() * arr.length) % arr.length];
+
+const state = { bars: [], series: null, feat: null, live: {}, arena: null, snapFiles: [], lastFetch: 0 };
+
+/* ---------- data ---------- */
+async function getJSON(url, opt) { const r = await fetch(url, opt); if (!r.ok) throw new Error(url.split('?')[0].split('/').slice(-1)[0] + ' ' + r.status); return r.json(); }
+async function loadSnapshots() {
+  const files = [FIRST_SNAPSHOT];
+  for (let m = SNAP_MONDAY0; m <= Date.now(); m += 7 * DAY) files.push('data/signals-' + new Date(m).toISOString().slice(0, 10) + '.json');
+  const merged = { oi: new Map(), ls: new Map(), top: new Map(), tk: new Map(), funding: new Map(), fng: new Map() };
+  const found = [];
+  for (const f of files) {
+    try {
+      const j = await getJSON(f + '?v=' + Math.floor(Date.now() / 3600e3), { cache: 'no-store' });
+      for (const k of Object.keys(merged)) for (const row of (j[k] || [])) merged[k].set(row[0], row);
+      found.push(f);
+    } catch (e) { /* missing week: fine */ }
+  }
+  state.snapFiles = found;
+  return merged;
+}
+async function loadLive(merged) {
+  const base = 'https://fapi.binance.com/futures/data/';
+  const q = 'symbol=BTCUSDT&period=1h&limit=500';
+  const pull = async (path, map, fn) => {
+    let end = Date.now();
+    for (let i = 0; i < 2; i++) {
+      const r = await getJSON(`${base}${path}?${q}&endTime=${end}`);
+      if (!r.length) break;
+      for (const x of r) map.set(x.timestamp, fn(x));
+      end = r[0].timestamp - 1;
+      if (r.length < 500) break;
+    }
+  };
+  await pull('openInterestHist', merged.oi, x => [x.timestamp, Math.round(+x.sumOpenInterest), Math.round(+x.sumOpenInterestValue / 1e6)]);
+  await pull('globalLongShortAccountRatio', merged.ls, x => [x.timestamp, +x.longShortRatio]);
+  await pull('topLongShortPositionRatio', merged.top, x => [x.timestamp, +x.longShortRatio]);
+  await pull('takerlongshortRatio', merged.tk, x => [x.timestamp, +x.buySellRatio]);
+  const fr = await getJSON(`https://fapi.binance.com/fapi/v1/fundingRate?symbol=BTCUSDT&limit=1000&startTime=${PRICE_FROM}`);
+  for (const x of fr) merged.funding.set(x.fundingTime, [x.fundingTime, +x.fundingRate]);
+  try { const f = await getJSON('https://api.alternative.me/fng/?limit=60'); for (const x of f.data) merged.fng.set(+x.timestamp * 1000, [+x.timestamp * 1000, +x.value]); } catch (e) {}
+  const series = {};
+  for (const k of Object.keys(merged)) series[k] = [...merged[k].values()].sort((a, b) => a[0] - b[0]);
+  state.series = series;
+  // price
+  let rows = [], t = PRICE_FROM;
+  for (let i = 0; i < 6; i++) {
+    const r = await getJSON(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&startTime=${t}&limit=1000`);
+    if (!r.length) break;
+    for (const k of r) rows.push([k[0], +k[1], +k[2], +k[3], +k[4]]);
+    if (r.length < 1000) break;
+    t = r[r.length - 1][6] + 1;
+  }
+  if (rows.length && rows[rows.length - 1][0] + H1 > Date.now()) rows.pop();   // drop the still-forming candle
+  state.bars = rows;
+  // live-only extras (no history, report cards only)
+  const live = {};
+  const tryGet = async (k, fn) => { try { live[k] = await fn(); } catch (e) { live[k] = null; } };
+  await Promise.all([
+    tryGet('ticker', () => getJSON('https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT')),
+    tryGet('prem', () => getJSON('https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT')),
+    tryGet('hl', () => fetch('https://api.hyperliquid.xyz/info', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'metaAndAssetCtxs' }) }).then(r => r.json())),
+    tryGet('cg', () => getJSON('https://api.coingecko.com/api/v3/global')),
+    tryGet('trend', () => getJSON('https://api.coingecko.com/api/v3/search/trending')),
+    tryGet('stable', () => getJSON('https://stablecoins.llama.fi/stablecoins?includePrices=false')),
+  ]);
+  state.live = live;
+  state.lastFetch = Date.now();
+}
+
+/* ---------- feature engineering (aligned to 1h bars, no look-ahead) ---------- */
+function align(series, bars, idx) {
+  const n = bars.length, o = new Float64Array(n).fill(NaN);
+  let j = 0, last = NaN;
+  for (let i = 0; i < n; i++) {
+    const closeT = bars[i][0] + H1;                 // a bar's decision is taken at its close
+    while (j < series.length && series[j][0] <= closeT) { last = series[j][idx]; j++; }
+    o[i] = last;
+  }
+  return o;
+}
+function rollPct(x, W, minN) {
+  const n = x.length, o = new Float64Array(n).fill(NaN);
+  for (let i = 0; i < n; i++) {
+    if (Number.isNaN(x[i])) continue;
+    let cnt = 0, below = 0, eq = 0;
+    for (let k = Math.max(0, i - W + 1); k <= i; k++) { const v = x[k]; if (Number.isNaN(v)) continue; cnt++; if (v < x[i]) below++; else if (v === x[i]) eq++; }
+    if (cnt >= minN) o[i] = (below + eq / 2) / cnt * 100;
+  }
+  return o;
+}
+function rollChg(x, N) { const o = new Float64Array(x.length).fill(NaN); for (let i = N; i < x.length; i++) if (x[i - N] > 0) o[i] = (x[i] / x[i - N] - 1) * 100; return o; }
+function rollMean(x, N) { const o = new Float64Array(x.length).fill(NaN); let s = 0, c = 0; const q = [];
+  for (let i = 0; i < x.length; i++) { const v = x[i]; q.push(v); if (!Number.isNaN(v)) { s += v; c++; }
+    if (q.length > N) { const d = q.shift(); if (!Number.isNaN(d)) { s -= d; c--; } } if (c >= Math.max(2, N / 2)) o[i] = s / c; } return o; }
+function rollZ(x, N) { const o = new Float64Array(x.length).fill(NaN);
+  for (let i = N; i < x.length; i++) { let s = 0, s2 = 0, c = 0; for (let k = i - N + 1; k <= i; k++) { const v = x[k]; if (Number.isNaN(v)) continue; s += v; s2 += v * v; c++; }
+    if (c < N / 2 || Number.isNaN(x[i])) continue; const m = s / c, sd = Math.sqrt(Math.max(0, s2 / c - m * m)); o[i] = sd > 0 ? (x[i] - m) / sd : 0; } return o; }
+function sma(c, n) { const o = new Float64Array(c.length).fill(NaN); let s = 0; for (let i = 0; i < c.length; i++) { s += c[i]; if (i >= n) s -= c[i - n]; if (i >= n - 1) o[i] = s / n; } return o; }
+
+function buildFeatures() {
+  const bars = state.bars, s = state.series;
+  const close = bars.map(r => r[4]);
+  const f = {
+    fund: align(s.funding, bars, 1), oi: align(s.oi, bars, 1), oiUsd: align(s.oi, bars, 2),
+    ls: align(s.ls, bars, 1), top: align(s.top, bars, 1), tk: align(s.tk, bars, 1), fng: align(s.fng, bars, 1), close,
+  };
+  f.fundP = rollPct(f.fund, PCT_WIN, PCT_MIN);
+  f.lsP = rollPct(f.ls, PCT_WIN, PCT_MIN);
+  f.topP = rollPct(f.top, PCT_WIN, PCT_MIN);
+  f.oiZ = { 168: rollZ(f.oi, 168) };
+  f.gap = new Float64Array(bars.length).fill(NaN);
+  for (let i = 0; i < bars.length; i++) if (!Number.isNaN(f.top[i]) && f.ls[i] > 0) f.gap[i] = (f.top[i] / f.ls[i] - 1) * 100;
+  f.gapP = rollPct(f.gap, PCT_WIN, PCT_MIN);
+  f.cache = new Map();
+  state.feat = f;
+  return f;
+}
+const featN = (name, N) => { const f = state.feat, k = name + ':' + N; if (f.cache.has(k)) return f.cache.get(k);
+  let v; if (name === 'oiChg') v = rollChg(f.oi, N); else if (name === 'pxChg') v = rollChg(f.close, N); else if (name === 'tkM') v = rollMean(f.tk, N); else if (name === 'sma') v = sma(f.close, N);
+  f.cache.set(k, v); return v; };
+
+/* ---------- species: every block returns a "raw crowd state" per bar: +1 = crowd long / bullish pressure, -1 = crowd short / bearish pressure ---------- */
+const S_BLOCKS = {
+  FUND_PCT: { nm: 'Funding pct', opts: [[80, 90, 95]], desc: p => `Funding ≥${p[0]}th / ≤${100 - p[0]}th pct`,
+    raw: (f, p, i) => Number.isNaN(f.fundP[i]) ? 0 : f.fundP[i] >= p[0] ? 1 : f.fundP[i] <= 100 - p[0] ? -1 : 0 },
+  FUND_ABS: { nm: 'Funding level', opts: [[1, 2, 3]], desc: p => `Funding ≥${p[0]}bp / ≤−${p[0]}bp`,
+    raw: (f, p, i) => Number.isNaN(f.fund[i]) ? 0 : f.fund[i] * 1e4 >= p[0] ? 1 : f.fund[i] * 1e4 <= -p[0] ? -1 : 0 },
+  OI_SURGE: { nm: 'OI surge', opts: [[4, 12, 24], [2, 4, 8]], desc: p => `OI +${p[1]}% in ${p[0]}h with price`,
+    raw: (f, p, i) => { const o = featN('oiChg', p[0])[i], x = featN('pxChg', p[0])[i]; return (Number.isNaN(o) || Number.isNaN(x) || o < p[1]) ? 0 : x > 0 ? 1 : x < 0 ? -1 : 0; } },
+  OI_FLUSH: { nm: 'OI flush', opts: [[4, 12, 24], [2, 4, 8]], desc: p => `OI −${p[1]}% in ${p[0]}h with price`,
+    raw: (f, p, i) => { const o = featN('oiChg', p[0])[i], x = featN('pxChg', p[0])[i]; return (Number.isNaN(o) || Number.isNaN(x) || o > -p[1]) ? 0 : x > 0 ? 1 : x < 0 ? -1 : 0; } },
+  OI_Z: { nm: 'OI z-score', opts: [[15, 20, 25]], desc: p => `OI z ≥${p[0] / 10} / ≤−${p[0] / 10} (7d)`,
+    raw: (f, p, i) => { const z = f.oiZ[168][i]; return Number.isNaN(z) ? 0 : z >= p[0] / 10 ? 1 : z <= -p[0] / 10 ? -1 : 0; } },
+  LS_PCT: { nm: 'Retail L/S pct', opts: [[80, 90, 95]], desc: p => `Retail long/short ≥${p[0]}th / ≤${100 - p[0]}th pct`,
+    raw: (f, p, i) => Number.isNaN(f.lsP[i]) ? 0 : f.lsP[i] >= p[0] ? 1 : f.lsP[i] <= 100 - p[0] ? -1 : 0 },
+  TOP_GAP: { nm: 'Whale-retail gap', opts: [[80, 90, 95]], desc: p => `Whale-vs-retail gap ≥${p[0]}th / ≤${100 - p[0]}th pct`,
+    raw: (f, p, i) => Number.isNaN(f.gapP[i]) ? 0 : f.gapP[i] >= p[0] ? 1 : f.gapP[i] <= 100 - p[0] ? -1 : 0 },
+  TAKER: { nm: 'Taker flow', opts: [[4, 12, 24], [5, 10, 20]], desc: p => `${p[0]}h taker buy/sell ≥1.${String(p[1]).padStart(2, '0')} / ≤${(1 - p[1] / 100).toFixed(2)}`,
+    raw: (f, p, i) => { const m = featN('tkM', p[0])[i]; return Number.isNaN(m) ? 0 : m >= 1 + p[1] / 100 ? 1 : m <= 1 - p[1] / 100 ? -1 : 0; } },
+  FNG: { nm: 'Fear & Greed', opts: [[20, 25, 30], [70, 75, 80]], desc: p => `F&G ≥${p[1]} greed / ≤${p[0]} fear`,
+    raw: (f, p, i) => Number.isNaN(f.fng[i]) ? 0 : f.fng[i] >= p[1] ? 1 : f.fng[i] <= p[0] ? -1 : 0 },
+};
+const S_KEYS = Object.keys(S_BLOCKS);
+const S_SPECIES = S_KEYS.concat(['COMBO']);          // COMBO = signal block gated by a price-trend filter
+const S_TRENDS = [[20, 50], [20, 100], [50, 200]];
+let S_ID = 0;
+function drawParams(rng, block) { return S_BLOCKS[block].opts.map(o => pick(rng, o)); }
+function S_draw(rng, birth) {
+  let block = pick(rng, S_SPECIES), p, sub = null, trend = null;
+  if (block === 'COMBO') { sub = pick(rng, S_KEYS); p = drawParams(rng, sub); trend = pick(rng, S_TRENDS); }
+  else p = drawParams(rng, block);
+  const mode = rng() < 0.5 ? 'follow' : 'fade';
+  return { id: 'S' + String(++S_ID).padStart(3, '0'), block, sub, p, trend, mode, hold: pick(rng, S_HOLDS), lev: pick(rng, S_LEVS), sl: pick(rng, S_SLS), birth, parent: null };
+}
+function S_mut(rng, par, birth) {
+  const g = { ...par, p: par.p.slice(), trend: par.trend ? par.trend.slice() : null, id: 'S' + String(++S_ID).padStart(3, '0'), birth, parent: par.id };
+  const d = rng();
+  if (d < 0.15) g.mode = g.mode === 'follow' ? 'fade' : 'follow';
+  else if (d < 0.35) g.hold = pick(rng, S_HOLDS);
+  else if (d < 0.50) g.lev = pick(rng, S_LEVS);
+  else if (d < 0.65) g.sl = pick(rng, S_SLS);
+  else if (g.trend && d < 0.75) g.trend = pick(rng, S_TRENDS);
+  else { const opts = S_BLOCKS[g.sub || g.block].opts; const k = Math.floor(rng() * opts.length) % opts.length; g.p[k] = pick(rng, opts[k]); }
+  return g;
+}
+function S_desc(g, short) {
+  const b = S_BLOCKS[g.sub || g.block];
+  const core = b.desc(g.p) + (g.trend ? ` ∧ SMA${g.trend[0]}/${g.trend[1]} trend` : '');
+  const m = g.mode === 'follow' ? 'follow' : 'fade';
+  return short ? `${b.nm} · ${m}` : `${core} → ${m} · hold ${g.hold}h · ${g.lev}x` + (g.sl ? ` · SL${g.sl * 100}%` : '');
+}
+const posCache = new Map();
+function S_pos(g) {
+  const key = [g.block, g.sub, g.p.join(','), g.trend ? g.trend.join('/') : '', g.mode, g.hold].join('|');
+  if (posCache.has(key)) return posCache.get(key);
+  const f = state.feat, n = state.bars.length, b = S_BLOCKS[g.sub || g.block];
+  const fast = g.trend ? featN('sma', g.trend[0]) : null, slow = g.trend ? featN('sma', g.trend[1]) : null;
+  const sgn = g.mode === 'follow' ? 1 : -1;
+  const pos = new Int8Array(n);
+  let side = 0, timer = 0;
+  for (let i = 0; i < n; i++) {
+    let want = b.raw(f, g.p, i) * sgn;
+    if (want !== 0 && g.trend) { const t = (Number.isNaN(fast[i]) || Number.isNaN(slow[i])) ? 0 : fast[i] > slow[i] ? 1 : -1; if (t !== want) want = 0; }
+    if (want !== 0) { side = want; timer = g.hold; }
+    else if (side !== 0) { timer--; if (timer <= 0) side = 0; }
+    pos[i] = side;
+  }
+  posCache.set(key, pos);
+  return pos;
+}
+/* money rules: identical to the Arena (fee wall 0.07%/side on notional, symmetric funding drag, wick liquidation at 5% margin, stop re-arm) */
+function S_score(g, fromTs, toTs, out) {
+  const bars = state.bars, pos = S_pos(g), L = g.lev || 1;
+  let eq = 1, side = 0, entryP = 0, entryEq = 0, heldBars = 0, eqAtOpen = 1, trades = 0, liqs = 0, slArmed = true, stopSide = 0;
+  const factorAt = px => 1 + side * L * (px / entryP - 1) - heldBars * L * S_FUND_H;
+  const open = px => { eqAtOpen = eq; entryEq = eq * (1 - S_FEE * L); entryP = px; heldBars = 0; };
+  const settle = px => { eq = entryEq * Math.max(0, factorAt(px)) * (1 - S_FEE * L); trades++; };
+  const rec = (ts, act, px, sd) => { if (out) out.push({ ts, act, px, side: sd, g, usd: act === 'OPEN' ? eq * S_DEP : (eq - eqAtOpen) * S_DEP, bal: eq * S_DEP }); };
+  for (let i = 1; i < bars.length; i++) {
+    const ts = bars[i][0];
+    if (ts <= fromTs) continue;
+    if (ts > toTs) break;
+    const c = bars[i][4], lo = bars[i][3], hi = bars[i][2];
+    if (side !== 0) {
+      heldBars++;
+      const adverse = side === 1 ? lo : hi;
+      if (1 + side * L * (adverse / entryP - 1) - heldBars * L * S_FUND_H <= 0.05) { eq = entryEq * 0.02; liqs++; trades++; rec(ts, 'LIQ', adverse, side); stopSide = side; side = 0; slArmed = false; }
+      else if (g.sl > 0) { const slPx = side === 1 ? entryP * (1 - g.sl) : entryP * (1 + g.sl);
+        if (side === 1 ? lo <= slPx : hi >= slPx) { settle(slPx); rec(ts, 'STOP', slPx, side); stopSide = side; side = 0; slArmed = false; } }
+    }
+    const want = pos[i];
+    if (!slArmed) { if (want !== stopSide) slArmed = true; }
+    else if (side === 0 && want !== 0) { open(c); side = want; rec(ts, 'OPEN', c, want); }
+    else if (side !== 0 && want !== side) { settle(c); rec(ts, 'CLOSE', c, side); side = 0; if (want !== 0) { open(c); side = want; rec(ts, 'OPEN', c, want); } }
+    if (eq <= 0.001 && side === 0) break;
+  }
+  let lastC = null;
+  for (let i = bars.length - 1; i >= 0; i--) if (bars[i][0] <= toTs) { lastC = bars[i][4]; break; }
+  const eqEnd = side !== 0 && lastC ? entryEq * Math.max(0, factorAt(lastC)) : eq;
+  return { ret: (eqEnd - 1) * 100, trades, liqs, inPos: side !== 0, side };
+}
+function S_replay() {
+  const rng = S_rng(SIG_SEED); S_ID = 0; posCache.clear();
+  let pool = []; const bench = [];
+  for (let i = 0; i < S_SEATS; i++) pool.push(S_draw(rng, SIG_START));
+  for (let i = 0; i < S_BENCH; i++) bench.push(S_draw(rng, SIG_START));
+  const now = state.bars[state.bars.length - 1][0];
+  const evo = []; let gen = 0, deaths = 0;
+  for (let W = SIG_START + 7 * DAY; W <= now; W += 7 * DAY) {
+    gen++;
+    const scored = pool.map(g => ({ g, s: S_score(g, g.birth, W) }));
+    const bankrupt = scored.filter(x => S_DEP * (1 + x.s.ret / 100) <= S_RUIN);
+    const bId = new Set(bankrupt.map(x => x.g.id));
+    const exempt = x => (W - x.g.birth < 14 * DAY) && x.s.trades < 5;
+    const killable = scored.filter(x => !bId.has(x.g.id) && !exempt(x)).sort((a, b) => a.s.ret - b.s.ret || a.g.id.localeCompare(b.g.id));
+    const dead = bankrupt.concat(killable.slice(0, Math.min(S_KILL, killable.length)));
+    const dId = new Set(dead.map(x => x.g.id));
+    const top10 = scored.filter(x => !dId.has(x.g.id)).sort((a, b) => b.s.ret - a.s.ret || a.g.id.localeCompare(b.g.id)).slice(0, 10);
+    const born = [];
+    for (let m = 0; m < dead.length; m++) {
+      if (m < S_MUT && top10.length) { const par = pick(rng, top10).g; const c = S_mut(rng, par, W); born.push(c); evo.push({ ts: W, act: 'BORN', g: c, why: `mutation of ${par.id}` }); }
+      else if (bench.length) { const k = Math.floor(rng() * bench.length) % bench.length; const c = bench.splice(k, 1)[0]; c.birth = W; born.push(c); evo.push({ ts: W, act: 'BORN', g: c, why: 'drawn from bench' }); }
+      else { const c = S_draw(rng, W); born.push(c); evo.push({ ts: W, act: 'BORN', g: c, why: 'fresh draw' }); }
+    }
+    for (const x of dead) evo.push({ ts: W, act: 'RETIRED', g: x.g, why: bId.has(x.g.id) ? `bankrupt at $${(S_DEP * (1 + x.s.ret / 100)).toFixed(0)}` : `bottom ${S_KILL} · ${x.s.ret.toFixed(1)}%`, ret: x.s.ret });
+    pool = pool.filter(g => !dId.has(g.id)).concat(born);
+    deaths += dead.length;
+  }
+  return { pool, gen, deaths, now, bench: bench.length, evo };
+}
+
+/* ---------- rendering ---------- */
+const fmtT = ts => { const d = new Date(ts); return String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0') + ' ' + String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0'); };
+const fmtN = (x, d = 0) => x == null || Number.isNaN(x) ? '–' : x.toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d });
+const last = (arr, k = 1) => arr.length >= k ? arr[arr.length - k] : null;
+function spark(vals, color, w = 200, h = 34) {
+  const v = vals.filter(x => !Number.isNaN(x)); if (v.length < 2) return '';
+  const mn = Math.min(...v), mx = Math.max(...v), rg = mx - mn || 1;
+  const pts = v.map((y, i) => `${(i / (v.length - 1) * w).toFixed(1)},${(h - 3 - (y - mn) / rg * (h - 6)).toFixed(1)}`).join(' ');
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round"/><circle cx="${w}" cy="${(h - 3 - (v[v.length - 1] - mn) / rg * (h - 6)).toFixed(1)}" r="2.2" fill="${color}"/></svg>`;
+}
+function pctLast(x, W = PCT_WIN) { const v = []; for (let i = Math.max(0, x.length - W); i < x.length; i++) if (!Number.isNaN(x[i])) v.push(x[i]); if (v.length < 10) return NaN; const c = v[v.length - 1]; let b = 0, e = 0; for (const y of v) { if (y < c) b++; else if (y === c) e++; } return (b + e / 2) / v.length * 100; }
+function sigCard(o) {
+  const cls = o.tone === 1 ? 'up' : o.tone === -1 ? 'down' : '';
+  const pb = Number.isNaN(o.pct) ? '' : `<div class="pb"><i style="left:${o.pct.toFixed(0)}%"></i></div>`;
+  return `<div class="sig${o.live ? ' live' : ''}"><div class="k"><b>${o.name}</b><span>${o.src}</span></div>
+    <div class="v ${cls}">${o.val}${o.unit ? `<small>${o.unit}</small>` : ''}</div>${pb}
+    <div class="r">${o.read}</div>${o.spark || ''}</div>`;
+}
+function renderBoard() {
+  const f = state.feat, s = state.series, lv = state.live, n = state.bars.length;
+  const tail = (x, k = 168) => Array.from(x.slice(Math.max(0, x.length - k)));
+  const cards = [];
+  const fund = last(s.funding)[1], fundP = pctLast(f.fund), fundAnn = fund * 3 * 365 * 100;
+  cards.push({ name: 'Funding rate', src: 'Binance perp · 8h', val: (fund * 100).toFixed(4) + '%', unit: `${fundAnn >= 0 ? '+' : ''}${fundAnn.toFixed(0)}% ann.`, pct: fundP, tone: fundP >= 90 ? -1 : fundP <= 10 ? 1 : 0,
+    read: fundP >= 90 ? `Longs paying up · <em>${fundP.toFixed(0)}th pct</em> of 30d — crowded long` : fundP <= 10 ? `Shorts paying · <em>${fundP.toFixed(0)}th pct</em> — crowded short` : `Neutral carry · ${fundP.toFixed(0)}th pct of 30d`, spark: spark(tail(f.fund, 240), '#c9d64f') });
+  if (lv.prem) { const pr = +lv.prem.lastFundingRate, basis = (+lv.prem.markPrice / +lv.prem.indexPrice - 1) * 100;
+    cards.push({ name: 'Predicted funding', src: 'Binance · next settle', val: (pr * 100).toFixed(4) + '%', unit: `basis ${basis >= 0 ? '+' : ''}${basis.toFixed(3)}%`, pct: NaN, tone: pr > 0.0003 ? -1 : pr < -0.0001 ? 1 : 0, live: true,
+      read: pr > 0.0003 ? 'Premium building — perps trading above index' : pr < -0.0001 ? 'Discount — perps below index, shorts paying' : 'Mark ≈ index, no premium pressure' }); }
+  const oiC = last(s.oi)[1], oiU = last(s.oi)[2], oi24 = featN('oiChg', 24)[n - 1], oiZ = f.oiZ[168][n - 1];
+  cards.push({ name: 'Open interest', src: 'Binance USDT-M', val: '$' + fmtN(oiU / 1000, 2) + 'B', unit: fmtN(oiC) + ' BTC', pct: pctLast(f.oi), tone: 0,
+    read: `24h ${oi24 >= 0 ? '+' : ''}${fmtN(oi24, 1)}% · 7d z-score ${oiZ >= 0 ? '+' : ''}${fmtN(oiZ, 2)} — ${Math.abs(oiZ) >= 2 ? '<em>extreme leverage build-up</em>' : oi24 <= -4 ? '<em>deleveraging</em>' : 'normal'}`, spark: spark(tail(f.oi), '#8ad6b0') });
+  const ls = last(s.ls)[1], lsP = pctLast(f.ls);
+  cards.push({ name: 'Retail long/short', src: 'all accounts · ratio', val: ls.toFixed(2), unit: `${(ls / (1 + ls) * 100).toFixed(0)}% long`, pct: lsP, tone: lsP >= 90 ? -1 : lsP <= 10 ? 1 : 0,
+    read: lsP >= 90 ? `Retail max long · <em>${lsP.toFixed(0)}th pct</em> — contrarian bearish` : lsP <= 10 ? `Retail max short · <em>${lsP.toFixed(0)}th pct</em> — contrarian bullish` : `${lsP.toFixed(0)}th pct of 30d`, spark: spark(tail(f.ls), '#93c88a') });
+  const top = last(s.top)[1], gap = f.gap[n - 1], gapP = pctLast(f.gap);
+  cards.push({ name: 'Top-trader positions', src: 'top 20% by margin', val: top.toFixed(2), unit: `${(top / (1 + top) * 100).toFixed(0)}% long`, pct: gapP, tone: gapP >= 90 ? 1 : gapP <= 10 ? -1 : 0,
+    read: `Whales ${gap >= 0 ? 'more long' : 'more short'} than retail by ${Math.abs(gap).toFixed(0)}% · gap at <em>${fmtN(gapP)}th pct</em>${gapP >= 90 ? ' — whales unusually bullish vs crowd' : gapP <= 10 ? ' — whales unusually bearish vs crowd' : ''}`, spark: spark(tail(f.gap), '#82c98f') });
+  const tk24 = featN('tkM', 24)[n - 1], tk4 = featN('tkM', 4)[n - 1];
+  cards.push({ name: 'Taker buy/sell', src: 'aggressive flow · 24h', val: fmtN(tk24, 3), unit: `4h ${fmtN(tk4, 2)}`, pct: pctLast(featN('tkM', 24)), tone: tk24 >= 1.05 ? 1 : tk24 <= 0.95 ? -1 : 0,
+    read: tk24 >= 1.05 ? 'Aggressive <em>buying</em> dominates the tape' : tk24 <= 0.95 ? 'Aggressive <em>selling</em> dominates the tape' : 'Balanced aggression', spark: spark(tail(f.tk), '#d3c95e') });
+  const fg = last(s.fng)[1], fgLbl = fg >= 75 ? 'Extreme greed' : fg >= 55 ? 'Greed' : fg > 45 ? 'Neutral' : fg > 25 ? 'Fear' : 'Extreme fear';
+  cards.push({ name: 'Fear & Greed', src: 'alternative.me · daily', val: String(fg), unit: fgLbl, pct: fg, tone: fg >= 75 ? -1 : fg <= 25 ? 1 : 0,
+    read: fg >= 75 ? '<em>Extreme greed</em> — historically a poor entry zone' : fg <= 25 ? '<em>Extreme fear</em> — historically a strong accumulation zone' : `${fgLbl} · no edge from sentiment alone`, spark: spark(s.fng.slice(-60).map(x => x[1]), '#c9d64f') });
+  if (lv.hl) { try { const i = lv.hl[0].universe.findIndex(u => u.name === 'BTC'); const hf = +lv.hl[1][i].funding, hAnn = hf * 24 * 365 * 100, bAnn = fund / 8 * 24 * 365 * 100;
+    cards.push({ name: 'Cross-venue funding', src: 'Hyperliquid vs Binance', val: `${hAnn >= 0 ? '+' : ''}${hAnn.toFixed(0)}%`, unit: `vs ${bAnn >= 0 ? '+' : ''}${bAnn.toFixed(0)}% ann.`, pct: NaN, tone: 0, live: true,
+      read: Math.abs(hAnn - bAnn) >= 10 ? `<em>${Math.abs(hAnn - bAnn).toFixed(0)}% ann. spread</em> — carry-arb window between venues` : 'Venues agree — no funding arbitrage' }); } catch (e) {} }
+  if (lv.cg && lv.cg.data) { const d = lv.cg.data, dom = d.market_cap_percentage.btc, chg = d.market_cap_change_percentage_24h_usd, tot = d.total_market_cap.usd / 1e12;
+    cards.push({ name: 'Total crypto cap', src: 'CoinGecko · live', val: '$' + tot.toFixed(2) + 'T', unit: `${chg >= 0 ? '+' : ''}${chg.toFixed(2)}% 24h`, pct: NaN, tone: chg >= 2 ? 1 : chg <= -2 ? -1 : 0, live: true,
+      read: `BTC dominance <em>${dom.toFixed(1)}%</em> · ETH ${d.market_cap_percentage.eth.toFixed(1)}% — ${dom >= 60 ? 'capital hiding in BTC' : 'alts holding share'}` }); }
+  if (lv.stable && lv.stable.peggedAssets) { let tot = 0; for (const a of lv.stable.peggedAssets) { const c = a.circulating && a.circulating.peggedUSD; if (c) tot += c; } const usdt = lv.stable.peggedAssets.find(a => a.symbol === 'USDT'), usdc = lv.stable.peggedAssets.find(a => a.symbol === 'USDC');
+    cards.push({ name: 'Stablecoin supply', src: 'DefiLlama · live', val: '$' + (tot / 1e9).toFixed(0) + 'B', unit: 'dry powder', pct: NaN, tone: 0, live: true,
+      read: `USDT $${usdt ? (usdt.circulating.peggedUSD / 1e9).toFixed(0) : '–'}B · USDC $${usdc ? (usdc.circulating.peggedUSD / 1e9).toFixed(0) : '–'}B — growth = fresh buying capacity` }); }
+  if (lv.trend && lv.trend.coins) cards.push({ name: 'Trending search', src: 'CoinGecko · live', val: lv.trend.coins.slice(0, 3).map(c => c.item.symbol).join(' · '), unit: '', pct: NaN, tone: 0, live: true,
+    read: 'Retail attention: ' + lv.trend.coins.slice(3, 7).map(c => c.item.symbol).join(', ') + (lv.trend.coins.some(c => c.item.symbol === 'BTC') ? ' — <em>BTC itself trending</em>' : '') });
+  $('sgrid').innerHTML = cards.map(sigCard).join('');
+  const first = state.series.oi[0][0];
+  $('sgridNote').textContent = `History: ${state.snapFiles.length} snapshot file(s) + live 30-day window · derivatives series since ${new Date(first).toISOString().slice(0, 10)} · ${fmtN(n)} hourly bars · cards marked with a border are live-only (no history yet).`;
+  // gauges + read
+  const crowd = (Number.isNaN(fundP) ? 50 : fundP) * 0.6 + (Number.isNaN(lsP) ? 50 : lsP) * 0.4;
+  const sent = fg * 0.6 + Math.min(100, Math.max(0, (tk24 - 0.9) / 0.2 * 100)) * 0.4;
+  const levg = Number.isNaN(oiZ) ? 50 : Math.min(100, Math.max(0, 50 + oiZ * 20));
+  const gauge = (t, v, s, col) => { const r = 26, c = 2 * Math.PI * r, off = c * (1 - v / 100);
+    return `<div class="gauge"><svg class="arc" viewBox="0 0 64 64"><circle cx="32" cy="32" r="${r}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="6"/><circle cx="32" cy="32" r="${r}" fill="none" stroke="${col}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${off}" transform="rotate(-90 32 32)"/><text x="32" y="36" text-anchor="middle" font-size="13" font-weight="700" fill="#f4f4fa">${v.toFixed(0)}</text></svg><div><div class="t">${t}</div><div class="s">${s}</div></div></div>`; };
+  $('gauges').innerHTML = gauge('Crowding (0 short-crowded · 100 long-crowded)', crowd, crowd >= 75 ? 'Longs are crowded: funding and retail positioning both stretched' : crowd <= 25 ? 'Shorts are crowded: squeeze fuel' : 'Positioning balanced', crowd >= 75 ? '#e0806e' : crowd <= 25 ? '#7ecf8a' : '#c9d64f')
+    + gauge('Sentiment (0 fear · 100 greed)', sent, `${fgLbl} · taker flow ${tk24 >= 1 ? 'buy' : 'sell'}-side`, sent >= 70 ? '#e0806e' : sent <= 30 ? '#7ecf8a' : '#c9d64f')
+    + gauge('Leverage (OI vs 7-day norm)', levg, Math.abs(oiZ) >= 2 ? 'Extreme: open interest far from its weekly norm — liquidation cascade risk' : 'Open interest inside its normal band', Math.abs(oiZ) >= 2 ? '#e0806e' : '#8ad6b0');
+  const px = last(state.bars)[4], px24 = state.bars[n - 25] ? (px / state.bars[n - 25][4] - 1) * 100 : 0;
+  const parts = [];
+  parts.push(`<b>BTC $${fmtN(px)}</b> (${px24 >= 0 ? '+' : ''}${px24.toFixed(2)}% / 24h).`);
+  parts.push(crowd >= 75 ? 'Positioning is <b>long-crowded</b>: the contrarian read is bearish-to-neutral, and the follow read only works while price keeps confirming.' : crowd <= 25 ? 'Positioning is <b>short-crowded</b>: the contrarian read is bullish (squeeze risk for shorts).' : 'Positioning is <b>balanced</b>: neither the fade nor the follow camp has a set-up from funding or retail ratio alone.');
+  parts.push(gapP >= 90 ? `The whale-retail gap is at its <b>${fmtN(gapP)}th percentile</b>: top traders are unusually more bullish than the crowd.` : gapP <= 10 ? `The whale-retail gap is at its <b>${fmtN(gapP)}th percentile</b>: top traders are unusually more bearish than the crowd.` : 'Whale-vs-retail positioning is inside its normal range — no smart-money divergence.');
+  parts.push(Math.abs(oiZ) >= 2 ? `Open interest is <b>${oiZ >= 0 ? 'stacked' : 'flushed'}</b> (z ${oiZ.toFixed(1)}): ${oiZ >= 0 ? 'a sharp move will cascade' : 'the leverage has already been washed out'}.` : `Open interest is normal (24h ${oi24 >= 0 ? '+' : ''}${oi24.toFixed(1)}%).`);
+  parts.push(`Sentiment: <b>${fgLbl}</b> (${fg}); taker flow ${tk24 >= 1.05 ? '<b>buy-heavy</b>' : tk24 <= 0.95 ? '<b>sell-heavy</b>' : 'balanced'} over 24h.`);
+  parts.push('<span style="color:var(--muted)">This read is descriptive. Whether any of it pays is exactly what the 50 bots below are testing, after fees.</span>');
+  $('readTxt').innerHTML = parts.join(' ');
+  $('readTag').textContent = 'as of ' + new Date(last(state.bars)[0] + H1).toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+  $('cPrice').textContent = '$' + fmtN(px); $('cPriceD').innerHTML = `<span class="${px24 >= 0 ? 'up' : 'down'}">${px24 >= 0 ? '+' : ''}${px24.toFixed(2)}%</span> 24h`;
+  $('cCrowd').innerHTML = `<span class="${crowd >= 75 ? 'down' : crowd <= 25 ? 'up' : ''}">${crowd.toFixed(0)}</span> <small style="font-size:11px;color:var(--muted)">/100</small>`;
+  $('cCrowdD').textContent = crowd >= 75 ? 'long-crowded' : crowd <= 25 ? 'short-crowded' : 'balanced';
+  $('cSent').innerHTML = `<span class="${sent >= 70 ? 'down' : sent <= 30 ? 'up' : ''}">${sent.toFixed(0)}</span> <small style="font-size:11px;color:var(--muted)">/100</small>`;
+  $('cSentD').textContent = fgLbl;
+}
+function renderArena() {
+  const a = state.arena, scored = a.pool.map(g => ({ g, s: S_score(g, g.birth, a.now) })).sort((x, y) => y.s.ret - x.s.ret || x.g.id.localeCompare(y.g.id));
+  state.scored = scored;
+  const inPos = scored.filter(x => x.s.inPos).length, prof = scored.filter(x => x.s.ret > 0).length;
+  const mx = Math.max(1, ...scored.map(x => Math.abs(x.s.ret)));
+  $('top10').innerHTML = scored.slice(0, 10).map((x, i) => { const eq = S_DEP * (1 + x.s.ret / 100), w = Math.min(100, Math.abs(x.s.ret) / mx * 100);
+    const st = x.s.inPos ? `<span class="pill" style="background:rgba(138,214,176,.16);color:var(--teal)">${x.s.side === 1 ? 'LONG' : 'SHORT'}</span>` : '<span class="pill refp">FLAT</span>';
+    return `<tr><td>${i + 1}</td><td><b>${x.g.id}</b></td><td class="rule">${S_desc(x.g)}</td><td class="${x.s.ret >= 0 ? 'up' : 'down'}"><b>$${fmtN(eq)}</b> (${x.s.ret >= 0 ? '+' : ''}${x.s.ret.toFixed(2)}%)</td><td><div class="hbar"><i style="left:0;width:${w}%;background:${x.s.ret >= 0 ? 'linear-gradient(90deg,#8fd694,#c9d64f)' : 'linear-gradient(90deg,#e0806e,#c96a5a)'}"></i></div></td><td>${x.s.trades}${x.s.liqs ? ` <span class="down">☠${x.s.liqs}</span>` : ''}</td><td>${st}</td></tr>`; }).join('');
+  const avg = scored.reduce((s, x) => s + x.s.ret, 0) / scored.length;
+  const med = scored.map(x => x.s.ret).sort((p, q) => p - q)[Math.floor(scored.length / 2)];
+  $('arenaTag').textContent = `Gen ${a.gen} · ${a.deaths} retired · ${prof}/${S_SEATS} profitable · ${inPos}/${S_SEATS} in position · bench ${a.bench}`;
+  $('arenaNote').textContent = `Forward-only since ${new Date(SIG_START).toISOString().slice(0, 10)} (each bot scored from its own birth). Seat average ${avg >= 0 ? '+' : ''}${avg.toFixed(2)}% · median ${med >= 0 ? '+' : ''}${med.toFixed(2)}% · 1h bars · fee 0.07%/side on notional + funding drag · liquidation on the wick. Same money rules as the main Arena, so results are comparable.`;
+  $('cArena').textContent = `Gen ${a.gen} · ${inPos}/${S_SEATS} in position`;
+  $('cArenaD').textContent = scored.length ? `Leader ${scored[0].g.id} ${scored[0].s.ret >= 0 ? '+' : ''}${scored[0].s.ret.toFixed(2)}%` : '–';
+  // species standings
+  const groups = {};
+  for (const x of scored) { const k = x.g.block === 'COMBO' ? 'COMBO' : x.g.block; (groups[k] = groups[k] || []).push(x); }
+  const rows = Object.entries(groups).map(([k, arr]) => ({ k, n: arr.length, avg: arr.reduce((s, x) => s + x.s.ret, 0) / arr.length, best: arr.slice().sort((p, q) => q.s.ret - p.s.ret)[0], foll: arr.filter(x => x.g.mode === 'follow').length })).sort((p, q) => q.avg - p.avg);
+  const amax = Math.max(1, ...rows.map(r => Math.abs(r.avg)));
+  $('species').innerHTML = rows.map(r => `<div class="sp"><b>${k2nm(r.k)}</b> · ${r.n} seated<br><span class="${r.avg >= 0 ? 'up' : 'down'}">avg ${r.avg >= 0 ? '+' : ''}${r.avg.toFixed(2)}%</span> · follow ${r.foll} / fade ${r.n - r.foll}<div class="bar"><i style="width:${Math.abs(r.avg) / amax * 100}%;${r.avg < 0 ? 'background:linear-gradient(90deg,#e0806e,#c96a5a)' : ''}"></i></div>best ${r.best.g.id} ${r.best.s.ret >= 0 ? '+' : ''}${r.best.s.ret.toFixed(1)}%</div>`).join('');
+  renderFeed(scored);
+}
+const k2nm = k => k === 'COMBO' ? 'Signal ∧ trend' : S_BLOCKS[k].nm;
+function renderFeed(scored) {
+  const rows = [];
+  for (const x of scored) { const log = []; S_score(x.g, x.g.birth, state.arena.now, log); for (const t of log) rows.push(t); }
+  for (const e of state.arena.evo) rows.push({ ts: e.ts, act: e.act, g: e.g, why: e.why, usd: e.ret, px: null });
+  rows.sort((a, b) => b.ts - a.ts);
+  const ACT = { OPEN: { cls: 'fa-open', txt: s => s === 1 ? 'LONG' : 'SHORT' }, CLOSE: { cls: 'fa-close', txt: () => 'CLOSE' }, STOP: { cls: 'fa-stop', txt: () => 'STOP' }, LIQ: { cls: 'fa-liq', txt: () => 'LIQ' }, BORN: { cls: 'fa-evo', txt: () => 'SEATED' }, RETIRED: { cls: 'fa-liq', txt: () => 'RETIRED' } };
+  $('feed').innerHTML = rows.slice(0, 80).map(t => { const a = ACT[t.act];
+    const money = t.act === 'OPEN' ? '$' + t.usd.toFixed(0) : (t.act === 'BORN') ? '' : (t.act === 'RETIRED') ? '' : (t.usd >= 0 ? '+$' : '-$') + Math.abs(t.usd).toFixed(0);
+    const mcls = (t.act === 'OPEN' || t.act === 'BORN' || t.act === 'RETIRED') ? '' : (t.usd >= 0 ? 'up' : 'down');
+    const why = t.act === 'STOP' ? `stop ${(t.g.sl * 100).toFixed(0)}% hit` : t.act === 'LIQ' ? `margin gone at ${t.g.lev}x` : t.why ? `${t.why} · ${S_desc(t.g, true)}` : S_desc(t.g, true);
+    return `<div class="frow"><span class="ft">${fmtT(t.ts)}</span><span class="fg">${t.g.id}</span><span class="fa ${a.cls}">${a.txt(t.side)}</span><span class="fm ${mcls}">${money}</span><span class="fw">${why}</span><span class="fp">${t.px ? '@' + fmtN(t.px) : ''}</span><span class="fl">${t.g.lev}x</span></div>`; }).join('') || '<div style="color:var(--muted);padding:16px;text-align:center">No activity yet</div>';
+  const n24 = rows.filter(r => r.ts >= Date.now() - DAY && r.act !== 'BORN' && r.act !== 'RETIRED').length;
+  $('feedTag').textContent = `${rows.length} events · ${n24} trades in the last 24h · evolution days in gold`;
+}
+function renderAll() {
+  if ($('app').classList.contains('loading')) { $('app').classList.remove('loading'); $('app').innerHTML = $('tpl').innerHTML; }
+  renderBoard();
+  renderArena();
+  $('foot').innerHTML = `Signal Desk v1.0 · seed ${SIG_SEED} · ${S_KEYS.length} signal species + signal∧trend combos · ${S_SEATS} seats, ${S_BENCH}-bot bench · weekly evolution on Monday 00:00 UTC · paper only, no keys, no real funds.<br>Snapshots loaded: ${state.snapFiles.join(', ') || 'none'} · Binance keeps derivatives series for 30 days only, so history is preserved in weekly snapshot files inside the repo.`;
+}
+/* ---------- snapshot export (weekly: copies a compact JSON of the merged series to the clipboard) ---------- */
+window.SIG = { state, exportSnapshot() { const s = state.series; const c = { symbol: 'BTCUSDT', taken: Date.now(), period: '1h', oi: s.oi, ls: s.ls, top: s.top, tk: s.tk, funding: s.funding, fng: s.fng }; return JSON.stringify(c); }, replay: S_replay, score: S_score, pos: S_pos, blocks: S_BLOCKS };
+
+async function boot() {
+  const dot = $('connDot'), txt = $('connTxt');
+  try {
+    txt.textContent = 'Loading snapshots…';
+    const merged = await loadSnapshots();
+    txt.textContent = 'Loading live Binance data…';
+    await loadLive(merged);
+    buildFeatures();
+    txt.textContent = 'Replaying 50-bot arena…';
+    state.arena = S_replay();
+    renderAll();
+    dot.className = 'dot ok'; txt.textContent = 'Live · ' + new Date().toISOString().slice(11, 19) + ' UTC';
+  } catch (e) {
+    dot.className = 'dot err'; txt.textContent = 'Error';
+    const b = $('errBanner'); b.className = 'banner err'; b.textContent = 'Load failed: ' + e.message + ' — will retry in 10 minutes.';
+    if ($('app').classList.contains('loading')) $('app').textContent = 'Could not load: ' + e.message;
+  }
+}
+/* stars background */
+(function stars() { const c = $('stars'); if (!c) return; const ctx = c.getContext('2d'); const draw = () => { const w = c.width = innerWidth, h = c.height = innerHeight; ctx.clearRect(0, 0, w, h); const r = S_rng(7);
+  for (let i = 0; i < 900; i++) { const x = r() * w, y = r() * h, s = r(); ctx.fillStyle = `rgba(${200 + s * 55},${210 + s * 40},255,${0.15 + s * 0.6})`; ctx.beginPath(); ctx.arc(x, y, s < 0.92 ? 0.6 + s * 0.6 : 1.4, 0, 6.283); ctx.fill(); } };
+  draw(); addEventListener('resize', draw); })();
+boot();
+setInterval(boot, 10 * 60e3);
+
+</script>
+</body>
+</html>
