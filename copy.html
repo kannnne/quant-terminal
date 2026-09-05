@@ -169,7 +169,7 @@
   <div class="topbar">
     <div>
       <h1>Copy Desk · Hyperliquid Top 100</h1>
-      <div class="sub">Page 2 · The 100 best 30-day traders on Hyperliquid, their fills on tape, and 100 copy bots testing whether following them — late, with fees — makes money · paper only</div>
+      <div class="sub">Page 2 · The 100 best 30-day traders on Hyperliquid, their fills pushed live by WebSocket, and 100 copy bots testing whether following them — 1 to 15 minutes late, with fees — makes money · paper only</div>
     </div>
     <div class="conn"><span class="dot" id="connDot"></span><span id="connTxt">Connecting…</span></div>
   </div>
@@ -230,15 +230,16 @@
 <script>
 /* ===================== PAGE 2 · COPY DESK ===================== */
 const $ = id => document.getElementById(id);
-const M5 = 300e3, H1 = 3600e3, DAY = 86400e3;
+const BAR = 60e3, H1 = 3600e3, DAY = 86400e3;   // v1.1: 1-minute pricing grid
 const COPY_SEED = 20260906;
 const C_SEATS = 100, C_KILL = 10, C_BENCH = 300, C_MUT = 4;
 const C_FEE = 0.0007, C_DEP = 1000, C_RUIN = 500, C_FUND_H = 0.0000125;
 const FIRST_ROSTER = 'data/copy-roster-2026-09-05.json';
 const ROSTER_MONDAY0 = Date.UTC(2026, 8, 7);
-const G = { who: ['all', 'top10', 'top25', 'whales', 'steady', 'lowlev'], delay: [1, 3, 12], k: [1, 1, 2, 3], maxPos: [3, 5], lev: [1, 1, 2, 2, 3, 5], sl: [0, 0.03, 0.05, 0.10], exit: ['mirror', 'mirror', 'h4', 'h24', 'h72'] };
+const G = { who: ['all', 'top10', 'top25', 'whales', 'steady', 'lowlev'], delay: [1, 5, 15], k: [1, 1, 2, 3], maxPos: [3, 5], lev: [1, 1, 2, 2, 3, 5], sl: [0, 0.03, 0.05, 0.10], exit: ['mirror', 'mirror', 'h4', 'h24', 'h72'] };
 const WHO_NM = { all: 'all 100', top10: 'top 10 by ROI', top25: 'top 25 by ROI', whales: '25 biggest accounts', steady: 'steady (win ≥55%, ≥20 closes)', lowlev: 'low leverage (≤5x)' };
 const CONSENSUS_WIN = 4 * H1;
+const COPY_VER = '1.1';
 
 function C_rng(a) { return function() { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const pick = (rng, arr) => arr[Math.floor(rng() * arr.length) % arr.length];
@@ -319,22 +320,29 @@ function buildEvents() {
   state.events = ev;
   return ev;
 }
+/* ---------- IndexedDB cache for 1-minute bars (per device; Binance keeps history, this only saves refetching) ---------- */
+const idb = { db: null,
+  open() { return new Promise(res => { if (this.db) return res(this.db); try { const r = indexedDB.open('copyDeskBars', 1); r.onupgradeneeded = () => r.result.createObjectStore('bars'); r.onsuccess = () => { this.db = r.result; res(this.db); }; r.onerror = () => res(null); } catch (e) { res(null); } }); },
+  async get(k) { const db = await this.open(); if (!db) return null; return new Promise(res => { try { const q = db.transaction('bars').objectStore('bars').get(k); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); } catch (e) { res(null); } }); },
+  async set(k, v) { const db = await this.open(); if (!db) return; try { db.transaction('bars', 'readwrite').objectStore('bars').put(v, k); } catch (e) {} } };
 async function loadBars() {
-  const from = Math.floor((state.rosters[0].frozen - H1) / M5) * M5, to = Date.now();
+  const from = Math.floor((state.rosters[0].frozen - H1) / BAR) * BAR, to = Date.now();
   const syms = [...new Set(['BTCUSDT'].concat(state.events.map(e => e.sym)))];
-  const grid = []; for (let t = from; t + M5 <= to; t += M5) grid.push(t);
+  const grid = []; for (let t = from; t + BAR <= to; t += BAR) grid.push(t);
   state.grid = grid; state.gridIdx = new Map(grid.map((t, i) => [t, i]));
   for (const sym of syms) {
-    const prev = state.bars[sym];
-    let t = prev && prev.length ? prev[prev.length - 1][0] + M5 : from, rows = prev ? prev.slice() : [];
+    let prev = state.bars[sym];
+    if (!prev) { const c = await idb.get(sym + '|' + from); if (c && c.length && c[0][0] === from) prev = c; }
+    let t = prev && prev.length ? prev[prev.length - 1][0] + BAR : from, rows = prev ? prev.slice() : [];
     for (let i = 0; i < 20; i++) {
-      const r = await getJSON(`https://fapi.binance.com/fapi/v1/klines?symbol=${sym}&interval=5m&startTime=${t}&limit=1500`);
+      const r = await getJSON(`https://fapi.binance.com/fapi/v1/klines?symbol=${sym}&interval=1m&startTime=${t}&limit=1500`);
       if (!r.length) break;
       for (const k of r) rows.push([k[0], +k[1], +k[2], +k[3], +k[4]]);
       if (r.length < 1500) break;
       t = r[r.length - 1][6] + 1;
     }
-    if (rows.length && rows[rows.length - 1][0] + M5 > Date.now()) rows.pop();
+    if (rows.length && rows[rows.length - 1][0] + BAR > Date.now()) rows.pop();
+    if (!prev || rows.length - prev.length > 60) idb.set(sym + '|' + from, rows);
     state.bars[sym] = rows; state.barMap[sym] = new Map(rows.map(b => [b[0], b]));
   }
 }
@@ -345,7 +353,7 @@ function C_draw(rng, birth) { const g = { id: 'C' + String(++C_ID).padStart(3, '
 function C_mut(rng, par, birth) { const g = { ...par, id: 'C' + String(++C_ID).padStart(3, '0'), birth, parent: par.id }; const keys = Object.keys(G); const k = pick(rng, keys); g[k] = pick(rng, G[k]); return g; }
 function C_desc(g, s) {
   const ex = g.exit === 'mirror' ? 'exit with leader' : `time stop ${g.exit.slice(1)}h`;
-  return s ? `${WHO_NM[g.who]} · ≤${g.delay * 5}m late` : `Follow ${WHO_NM[g.who]} · ≤${g.delay * 5}m late · consensus ≥${g.k} · ${g.maxPos} slots · ${g.lev}x · ${ex}` + (g.sl ? ` · SL${g.sl * 100}%` : '');
+  return s ? `${WHO_NM[g.who]} · ≤${g.delay}m late` : `Follow ${WHO_NM[g.who]} · ≤${g.delay}m late · consensus ≥${g.k} · ${g.maxPos} slots · ${g.lev}x · ${ex}` + (g.sl ? ` · SL${g.sl * 100}%` : '');
 }
 function whoSet(g, r) {
   const T = r.traders;
@@ -366,7 +374,7 @@ function C_score(g, fromTs, toTs, out) {
   for (const e of state.events) {
     if (e.t < fromTs || e.t > toTs) continue;
     if (!setFor(e.t).has(e.a)) continue;
-    const idx = Math.floor((e.t - grid[0]) / M5) + (g.delay - 1);   // delay 1 = act at the close of the 5m bar containing the fill (0-5 min later)
+    const idx = Math.floor((e.t - grid[0]) / BAR) + (g.delay - 1);   // delay 1 = act at the close of the 1m bar containing the fill (0-60 s later)
     if (idx < 0 || idx >= grid.length) continue;
     if (e.open) {
       const key = e.coin + '|' + e.side; const q = recent.get(key) || []; q.push([e.t, e.a]); while (q.length && q[0][0] < e.t - CONSENSUS_WIN) q.shift(); recent.set(key, q);
@@ -379,17 +387,17 @@ function C_score(g, fromTs, toTs, out) {
   const L = g.lev;
   const rec = (ts, act, e, px, usd, eq) => { if (out) out.push({ ts, act, px, side: e.side, g, coin: e.coin, usd: usd * C_DEP, bal: eq * C_DEP, leader: e.leader }); };
   const equity = i => { let eq = cash; for (const p of pos.values()) { const b = state.barMap[p.sym].get(grid[i]); const px = b ? b[4] : p.last; p.last = px; eq += p.alloc + p.N * p.side * (px / p.entry - 1) - p.fund; } return eq; };
-  const closeAt = (p, px, i, act, why) => { const pnl = p.N * p.side * (px / p.entry - 1); cash += p.alloc + pnl - p.N * C_FEE - p.fund; trades++; pos.delete(p.sym); rec(grid[i] + M5, act, { side: p.side, coin: p.coin, leader: p.leader }, px, pnl - p.N * C_FEE * 2 - p.fund, cash + [...pos.values()].reduce((s, q) => s + q.alloc, 0)); };
+  const closeAt = (p, px, i, act, why) => { const pnl = p.N * p.side * (px / p.entry - 1); cash += p.alloc + pnl - p.N * C_FEE - p.fund; trades++; pos.delete(p.sym); rec(grid[i] + BAR, act, { side: p.side, coin: p.coin, leader: p.leader }, px, pnl - p.N * C_FEE * 2 - p.fund, cash + [...pos.values()].reduce((s, q) => s + q.alloc, 0)); };
   for (let i = 0; i < grid.length; i++) {
-    const t = grid[i]; if (t + M5 <= fromTs) continue; if (t > toTs) break;
+    const t = grid[i]; if (t + BAR <= fromTs) continue; if (t > toTs) break;
     // mark, liquidation, stops
     for (const p of [...pos.values()]) {
       const b = state.barMap[p.sym].get(t); if (!b) continue;
-      p.fund += p.N * C_FUND_H / 12;
+      p.fund += p.N * C_FUND_H / 60;
       const adverse = p.side === 1 ? b[3] : b[2];
-      if (p.side * (adverse / p.entry - 1) * L <= -0.95) { const px = adverse; cash += p.alloc * 0.02; liqs++; trades++; pos.delete(p.sym); rec(t + M5, 'LIQ', { side: p.side, coin: p.coin, leader: p.leader }, px, -p.alloc * 0.98, cash); continue; }
+      if (p.side * (adverse / p.entry - 1) * L <= -0.95) { const px = adverse; cash += p.alloc * 0.02; liqs++; trades++; pos.delete(p.sym); rec(t + BAR, 'LIQ', { side: p.side, coin: p.coin, leader: p.leader }, px, -p.alloc * 0.98, cash); continue; }
       if (g.sl > 0) { const slPx = p.side === 1 ? p.entry * (1 - g.sl) : p.entry * (1 + g.sl); if (p.side === 1 ? b[3] <= slPx : b[2] >= slPx) { closeAt(p, slPx, i, 'STOP'); continue; } }
-      if (g.exit !== 'mirror') { const hrs = +g.exit.slice(1); if ((i - p.openedIdx) * M5 >= hrs * H1) closeAt(p, b[4], i, 'CLOSE'); }
+      if (g.exit !== 'mirror') { const hrs = +g.exit.slice(1); if ((i - p.openedIdx) * BAR >= hrs * H1) closeAt(p, b[4], i, 'CLOSE'); }
     }
     const list = dec.get(i); if (list) for (const e of list) {
       const b = state.barMap[e.sym].get(t); if (!b) continue; const px = b[4];
@@ -402,7 +410,7 @@ function C_score(g, fromTs, toTs, out) {
         const alloc = Math.min(cash, eq / g.maxPos); if (alloc <= 0.01) continue;
         const N = alloc * L; cash -= alloc + N * C_FEE;
         pos.set(e.sym, { sym: e.sym, coin: e.coin, side: e.side, alloc, N, entry: px, leader: e.a, openedIdx: i, fund: 0, last: px });
-        rec(t + M5, 'OPEN', { side: e.side, coin: e.coin, leader: e.a }, px, alloc, cash + [...pos.values()].reduce((s, q) => s + q.alloc, 0));
+        rec(t + BAR, 'OPEN', { side: e.side, coin: e.coin, leader: e.a }, px, alloc, cash + [...pos.values()].reduce((s, q) => s + q.alloc, 0));
       } else if (p && g.exit === 'mirror' && p.leader === e.a && p.side === e.side && e.rem <= 0.5) closeAt(p, px, i, 'CLOSE');
     }
     if (equity(i) * C_DEP <= C_RUIN * 0.2 && pos.size === 0) break;
@@ -417,7 +425,7 @@ function C_replay() {
   let pool = []; const bench = [];
   for (let i = 0; i < C_SEATS; i++) pool.push(C_draw(rng, start));
   for (let i = 0; i < C_BENCH; i++) bench.push(C_draw(rng, start));
-  const now = state.grid.length ? state.grid[state.grid.length - 1] + M5 : Date.now();
+  const now = state.grid.length ? state.grid[state.grid.length - 1] + BAR : Date.now();
   const evo = []; let gen = 0, deaths = 0;
   const firstMonday = (() => { const d = new Date(start); const dow = d.getUTCDay(); const m = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) + ((8 - dow) % 7 || 7) * DAY; return m; })();
   for (let W = firstMonday; W <= now; W += 7 * DAY) {
@@ -475,11 +483,11 @@ function renderArena() {
     return `<tr><td>${i + 1}</td><td><b>${x.g.id}</b></td><td class="rule">${C_desc(x.g)}</td><td class="${x.s.ret >= 0 ? 'up' : 'down'}"><b>$${fmtN(eq)}</b> (${x.s.ret >= 0 ? '+' : ''}${x.s.ret.toFixed(2)}%)</td><td><div class="hbar"><i style="left:0;width:${w}%;background:${x.s.ret >= 0 ? 'linear-gradient(90deg,#8fd694,#c9d64f)' : 'linear-gradient(90deg,#e0806e,#c96a5a)'}"></i></div></td><td>${x.s.trades}${x.s.liqs ? ` <span class="down">☠${x.s.liqs}</span>` : ''}</td><td>${st}</td></tr>`; }).join('');
   const avg = scored.reduce((s, x) => s + x.s.ret, 0) / scored.length, med = scored.map(x => x.s.ret).sort((p, q) => p - q)[Math.floor(scored.length / 2)];
   $('arenaTag').textContent = `Gen ${a.gen} · ${a.deaths} retired · ${prof}/${C_SEATS} profitable · ${inPos}/${C_SEATS} in position · ${traded}/${C_SEATS} have traded · bench ${a.bench}`;
-  $('arenaNote').textContent = `Forward-only since the first freeze (${new Date(a.start).toISOString().replace('T', ' ').slice(0, 16)} UTC). Seat average ${avg >= 0 ? '+' : ''}${avg.toFixed(2)}% · median ${med >= 0 ? '+' : ''}${med.toFixed(2)}% · priced on Binance USDT-M 5m closes after the bot's own delay · fee 0.07%/side + funding drag · liquidation on the wick · same money rules as the Arena.`;
+  $('arenaNote').textContent = `Forward-only since the first freeze (${new Date(a.start).toISOString().replace('T', ' ').slice(0, 16)} UTC). Seat average ${avg >= 0 ? '+' : ''}${avg.toFixed(2)}% · median ${med >= 0 ? '+' : ''}${med.toFixed(2)}% · priced on Binance USDT-M 1-minute closes after the bot's own delay · leaders' fills arrive by WebSocket push · fee 0.07%/side + funding drag · liquidation on the wick · same money rules as the Arena.`;
   $('cArena').textContent = `Gen ${a.gen} · ${inPos}/${C_SEATS} in position`; $('cArenaD').textContent = scored.length ? `Leader ${scored[0].g.id} ${scored[0].s.ret >= 0 ? '+' : ''}${scored[0].s.ret.toFixed(2)}%` : '–';
   // standings by who / delay / exit
   const grp = (key, nm) => { const gs = {}; for (const x of scored) (gs[x.g[key]] = gs[x.g[key]] || []).push(x); return Object.entries(gs).map(([k, arr]) => ({ k: nm(k), n: arr.length, avg: arr.reduce((s, x) => s + x.s.ret, 0) / arr.length, tr: arr.reduce((s, x) => s + x.s.trades, 0) })).sort((p, q) => q.avg - p.avg); };
-  const blocks = [['Who they follow', grp('who', k => WHO_NM[k])], ['Delay (information gap)', grp('delay', k => `≤${k * 5} min late`)], ['Consensus', grp('k', k => `≥${k} traders agree`)], ['Exit rule', grp('exit', k => k === 'mirror' ? 'exit with leader' : `time stop ${k.slice(1)}h`)], ['Leverage', grp('lev', k => `${k}x`)]];
+  const blocks = [['Who they follow', grp('who', k => WHO_NM[k])], ['Delay (information gap)', grp('delay', k => `≤${k} min late`)], ['Consensus', grp('k', k => `≥${k} traders agree`)], ['Exit rule', grp('exit', k => k === 'mirror' ? 'exit with leader' : `time stop ${k.slice(1)}h`)], ['Leverage', grp('lev', k => `${k}x`)]];
   $('species').innerHTML = blocks.map(([title, rows]) => { const amax = Math.max(1, ...rows.map(r => Math.abs(r.avg)));
     return `<div class="spblock"><div class="spt">${title}</div>` + rows.map(r => `<div class="sp"><b>${r.k}</b> · ${r.n} bots · ${r.tr} trades<br><span class="${r.avg >= 0 ? 'up' : 'down'}">avg ${r.avg >= 0 ? '+' : ''}${r.avg.toFixed(2)}%</span><div class="bar"><i style="width:${Math.abs(r.avg) / amax * 100}%;${r.avg < 0 ? 'background:linear-gradient(90deg,#e0806e,#c96a5a)' : ''}"></i></div></div>`).join('') + '</div>'; }).join('');
   renderFeed(scored);
@@ -506,13 +514,43 @@ function renderAll() {
   $('cRoster').textContent = `${r.traders.length} traders`; $('cRosterD').textContent = 'frozen ' + new Date(r.frozen).toISOString().slice(0, 10) + (state.rosters.length > 1 ? ` · roster #${state.rosters.length}` : ' · roster #1');
   const n24 = state.events.filter(e => e.t >= Date.now() - DAY).length;
   $('cTape').textContent = `${state.events.length} fills`; $('cTapeD').textContent = `${n24} in 24h · ${new Set(state.events.map(e => e.coin)).size} coins`;
-  const sym = 'BTCUSDT', b = state.bars[sym]; if (b && b.length) { const px = b[b.length - 1][4], p24 = b[b.length - 289] ? (px / b[b.length - 289][4] - 1) * 100 : 0; $('cPrice').textContent = '$' + fmtN(px); $('cPriceD').innerHTML = `<span class="${p24 >= 0 ? 'up' : 'down'}">${p24 >= 0 ? '+' : ''}${p24.toFixed(2)}%</span> 24h`; }
+  const sym = 'BTCUSDT', b = state.bars[sym]; if (b && b.length) { const px = b[b.length - 1][4], p24 = b[b.length - 1441] ? (px / b[b.length - 1441][4] - 1) * 100 : 0; $('cPrice').textContent = '$' + fmtN(px); $('cPriceD').innerHTML = `<span class="${p24 >= 0 ? 'up' : 'down'}">${p24 >= 0 ? '+' : ''}${p24.toFixed(2)}%</span> 24h`; }
   renderRoster(); renderTape(); renderArena();
-  $('foot').innerHTML = `Copy Desk v1.0 · seed ${COPY_SEED} · ${C_SEATS} copy bots (${Object.keys(G).length} genes: who / delay / consensus / slots / leverage / stop / exit) + ${C_BENCH}-bot bench · weekly evolution + roster re-freeze on Monday 00:00 UTC · leaders' fills from Hyperliquid's public API, bots priced on Binance USDT-M perps · paper only.<br>Snapshots: ${state.snapFiles.join(', ')}${state.live.syncErr ? ` · ${state.live.syncErr} trader(s) failed to sync this load` : ''}.`;
+  $('foot').innerHTML = `Copy Desk v${COPY_VER} · seed ${COPY_SEED} · ${C_SEATS} copy bots (${Object.keys(G).length} genes: who / delay / consensus / slots / leverage / stop / exit) + ${C_BENCH}-bot bench · weekly evolution + roster re-freeze on Monday 00:00 UTC · leaders' fills from Hyperliquid's public API, bots priced on Binance USDT-M perps · paper only.<br>Snapshots: ${state.snapFiles.join(', ')}${state.live.syncErr ? ` · ${state.live.syncErr} trader(s) failed to sync this load` : ''}.`;
 }
 window.COPY = { state, replay: C_replay, score: C_score, desc: C_desc, exportFills() { const o = {}; for (const [a, arr] of state.fills) if (arr.length) o[a] = arr; return JSON.stringify(o); } };
 
+/* ---------- real-time: Hyperliquid WebSocket userFills push for every roster address ---------- */
+const WS = { sock: null, pending: 0, timer: null, ping: null, lastMsg: 0, retries: 0,
+  start() {
+    if (this.sock) return;
+    let sock; try { sock = new WebSocket('wss://api.hyperliquid.xyz/ws'); } catch (e) { return; }
+    this.sock = sock;
+    sock.onopen = () => { this.retries = 0; state.live.ws = 'open'; const r = state.rosters[state.rosters.length - 1];
+      for (const t of r.traders) sock.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'userFills', user: t.a } }));
+      this.ping = setInterval(() => { try { sock.send(JSON.stringify({ method: 'ping' })); } catch (e) {} }, 50e3); setConn(); };
+    sock.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      if (m.channel !== 'userFills' || !m.data) return; this.lastMsg = Date.now();
+      const a = m.data.user, fills = (m.data.fills || []).map(compactFill).filter(Boolean); if (!a || !fills.length) return;
+      const arr = state.fills.get(a) || []; const seen = new Set(arr.map(f => f[0] + '|' + f[1] + '|' + f[2] + '|' + f[4]));
+      let added = 0; for (const f of fills) { if (f[0] < state.rosters[0].frozen) continue; const k = f[0] + '|' + f[1] + '|' + f[2] + '|' + f[4]; if (seen.has(k)) continue; seen.add(k); arr.push(f); added++; }
+      if (!added) return; arr.sort((p, q) => p[0] - q[0]); state.fills.set(a, arr); this.pending += added;
+      try { const c = JSON.parse(localStorage.getItem('copyFillsCache') || '{}'); if (c.d) { c.d[a] = (c.d[a] || []).concat(fills.filter(f => f[0] >= state.rosters[0].frozen)); localStorage.setItem('copyFillsCache', JSON.stringify(c)); } } catch (e) {}
+      if (!this.timer) this.timer = setTimeout(() => { this.timer = null; refresh('ws'); }, 15e3); };
+    sock.onclose = () => { this.sock = null; state.live.ws = 'closed'; clearInterval(this.ping); setConn(); const d = Math.min(60e3, 2000 * Math.pow(2, this.retries++)); setTimeout(() => this.start(), d); };
+    sock.onerror = () => { try { sock.close(); } catch (e) {} };
+  } };
+function setConn() { const dot = $('connDot'), txt = $('connTxt'); if (!dot || state.booting) return; dot.className = 'dot ok';
+  txt.textContent = (state.live.ws === 'open' ? 'Live · WebSocket push · ' : 'Live · polling · ') + new Date(state.lastRender || Date.now()).toISOString().slice(11, 19) + ' UTC'; }
+let refreshing = false;
+async function refresh(why) {
+  if (refreshing || state.booting) return; refreshing = true;
+  try { buildEvents(); await loadBars(); state.arena = C_replay(); state.lastRender = Date.now(); renderAll(); WS.pending = 0; setConn(); }
+  catch (e) { const b = $('errBanner'); b.className = 'banner warn'; b.textContent = 'Refresh failed (' + why + '): ' + e.message; }
+  refreshing = false;
+}
 async function boot() {
+  state.booting = true;
   const dot = $('connDot'), txt = $('connTxt');
   try {
     txt.textContent = 'Loading roster…';
@@ -523,9 +561,12 @@ async function boot() {
     txt.textContent = 'Loading Binance 5m prices…';
     await loadBars();
     state.arena = C_replay();
+    state.lastRender = Date.now();
     renderAll();
-    dot.className = 'dot ok'; txt.textContent = 'Live · ' + new Date().toISOString().slice(11, 19) + ' UTC';
+    state.booting = false; setConn();
+    WS.start();
   } catch (e) {
+    state.booting = false;
     dot.className = 'dot err'; txt.textContent = 'Error';
     const b = $('errBanner'); b.className = 'banner err'; b.textContent = 'Load failed: ' + e.message + ' — will retry in 10 minutes.';
     if ($('app').classList.contains('loading')) $('app').textContent = 'Could not load: ' + e.message;
@@ -535,7 +576,8 @@ async function boot() {
   for (let i = 0; i < 900; i++) { const x = r() * w, y = r() * h, s = r(); ctx.fillStyle = `rgba(${200 + s * 55},${210 + s * 40},255,${0.15 + s * 0.6})`; ctx.beginPath(); ctx.arc(x, y, s < 0.92 ? 0.6 + s * 0.6 : 1.4, 0, 6.283); ctx.fill(); } };
   draw(); addEventListener('resize', draw); })();
 boot();
-setInterval(boot, 10 * 60e3);
+setInterval(() => { if (!state.booting) refresh('timer'); }, 60e3);          // 1-minute mark-to-market + any WS fills
+setInterval(() => { if (!state.booting && (!WS.sock || Date.now() - WS.lastMsg > 30 * 60e3)) boot(); }, 30 * 60e3);   // REST resync fallback if the socket is dead
 
 </script>
 </body>
