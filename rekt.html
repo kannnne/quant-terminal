@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>REKT Lab · Archetype Arena · Quant Terminal</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #000;
+    --panel: rgba(255,255,255,0.035);
+    --panel-2: rgba(255,255,255,0.06);
+    --border: rgba(255,255,255,0.08);
+    --border-hi: rgba(134,201,138,0.30);
+    --ink: #f4f4fa;
+    --ink-2: #c9c8da;
+    --muted: #8f8ea8;
+    --grid: rgba(255,255,255,0.06);
+    --vio: #93c88a; --vio-2: #b0d9a5;
+    --pink: #c9d64f; --blue: #82c98f; --orange: #d3c95e; --green: #7ecf8a; --red: #e0806e; --gold: #c9d64f; --teal: #8ad6b0;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #050609; color: var(--ink); min-height: 100vh; }
+  #universe { position: fixed; inset: 0; z-index: 0; background:
+    radial-gradient(ellipse at 22% 18%, rgba(134,201,138,.07), transparent 48%),
+    radial-gradient(ellipse at 80% 82%, rgba(138,214,176,.05), transparent 50%),
+    radial-gradient(ellipse at 50% 38%, #0a0c13, #050609 72%); }
+  #stars { position: absolute; inset: 0; width: 100%; height: 100%; display: block; opacity: .9; }
+  .shell { position: relative; z-index: 1; }
+  main { padding: 22px 36px 40px; min-width: 0; max-width: 1700px; margin: 0 auto; }
+  .topbar { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; flex-wrap: wrap; }
+  .topbar h1 { font-size: 16px; font-weight: 650; }
+  .topbar .sub { font-size: 11.5px; color: var(--muted); }
+  .conn { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--ink-2);
+    padding: 6px 13px; border-radius: 999px; border: none; background: rgba(255,255,255,.07);
+    backdrop-filter: blur(14px) brightness(1.3); -webkit-backdrop-filter: blur(14px) brightness(1.3); box-shadow: inset 0 1px 0 rgba(255,255,255,.14); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 8px currentColor; }
+  .dot.ok { background: var(--green); color: var(--green); } .dot.err { background: var(--red); color: var(--red); }
+  .tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tab-btn { padding: 9px 22px; border-radius: 999px; border: none; background: rgba(255,255,255,.07);
+    color: var(--ink-2); font-size: 13px; font-weight: 650; cursor: pointer; text-decoration: none; display: inline-block;
+    backdrop-filter: blur(14px) brightness(1.3); -webkit-backdrop-filter: blur(14px) brightness(1.3);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.14); }
+  .tab-btn.on { background: linear-gradient(135deg, #93ce93, #5da96f); color: #0c130d; box-shadow: 0 0 18px rgba(134,201,138,.35); }
+  .tab-btn .mini { font-size: 10px; opacity: .75; font-weight: 500; margin-left: 6px; }
+  .tab-btn.soon { opacity: .55; cursor: default; }
+
+  .card {
+    --glow: var(--vio);
+    background: linear-gradient(150deg,
+      color-mix(in srgb, var(--glow) 5%, rgba(255,255,255,.085)),
+      rgba(16,18,16,.46) 55%,
+      color-mix(in srgb, var(--glow) 2%, rgba(255,255,255,.04)));
+    border: none; border-radius: 22px; padding: 18px 20px; position: relative; margin-bottom: 12px;
+    backdrop-filter: blur(16px) saturate(160%) brightness(1.32);
+    -webkit-backdrop-filter: blur(16px) saturate(160%) brightness(1.32);
+    box-shadow: 0 18px 60px rgba(0,0,0,.45), 0 0 80px color-mix(in srgb, var(--glow) 5%, transparent),
+      inset 0 1px 0 rgba(255,255,255,.14), inset 0 -1px 0 color-mix(in srgb, var(--glow) 8%, rgba(255,255,255,.04));
+  }
+  .card::before { content: ""; position: absolute; inset: 0; border-radius: 22px; pointer-events: none;
+    background: linear-gradient(165deg, rgba(255,255,255,.09) 0%, rgba(255,255,255,0) 30%, rgba(255,255,255,0) 72%, rgba(255,255,255,.045) 100%); }
+  .card.g-green { --glow: var(--green); } .card.g-gold { --glow: var(--gold); } .card.g-teal { --glow: var(--teal); } .card.g-red { --glow: var(--red); }
+  .card h2 { font-size: 12.5px; font-weight: 650; color: var(--ink-2); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; letter-spacing: .02em; flex-wrap: wrap; }
+  .card h2 .tag { font-size: 10px; color: var(--muted); font-weight: 500; }
+  .legend { display: flex; gap: 13px; font-size: 11px; color: var(--ink-2); margin-left: auto; }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; vertical-align: -1px; margin-right: 5px; }
+
+  .chips { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .chip { display: flex; align-items: center; gap: 12px;
+    background: linear-gradient(150deg, color-mix(in srgb, var(--c) 6%, rgba(255,255,255,.085)), rgba(16,18,16,.44) 55%, color-mix(in srgb, var(--c) 2%, rgba(255,255,255,.04)));
+    border: none; border-radius: 20px; padding: 14px 15px;
+    backdrop-filter: blur(16px) saturate(160%) brightness(1.3); -webkit-backdrop-filter: blur(16px) saturate(160%) brightness(1.3);
+    box-shadow: 0 14px 44px rgba(0,0,0,.4), 0 0 60px color-mix(in srgb, var(--c) 5%, transparent), inset 0 1px 0 rgba(255,255,255,.14); }
+  .chip .ring { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; font-size: 17px; flex-shrink: 0;
+    background: radial-gradient(circle at 32% 28%, rgba(255,255,255,.22), transparent 55%), var(--c);
+    box-shadow: 0 0 16px color-mix(in srgb, var(--c) 55%, transparent); color: #0c130d; font-weight: 800; }
+  .chip .k { font-size: 10.5px; color: var(--muted); margin-bottom: 3px; }
+  .chip .v { font-size: 16.5px; font-weight: 700; line-height: 1.1; }
+  .chip .d { font-size: 10px; color: var(--ink-2); margin-top: 2px; }
+  .up { color: var(--green); } .down { color: var(--red); } .flat { color: var(--muted); }
+
+  /* signal cards */
+  .sgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 10px; }
+  .sig { border-radius: 16px; padding: 12px 13px 10px; background: rgba(255,255,255,.035);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.09); position: relative; min-height: 132px; display: flex; flex-direction: column; }
+  .sig .k { font-size: 10.5px; color: var(--muted); display: flex; justify-content: space-between; gap: 6px; }
+  .sig .k b { color: var(--ink-2); font-weight: 600; }
+  .sig .v { font-size: 20px; font-weight: 750; margin: 4px 0 1px; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+  .sig .v small { font-size: 11px; font-weight: 600; color: var(--muted); margin-left: 5px; }
+  .sig svg { width: 100%; height: 34px; display: block; margin-top: auto; }
+  .sig .pb { height: 5px; border-radius: 99px; background: rgba(255,255,255,.08); position: relative; margin: 6px 0 5px; }
+  .sig .pb i { position: absolute; top: -2px; width: 9px; height: 9px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 8px var(--gold); transform: translateX(-50%); }
+  .sig .pb::before { content: ""; position: absolute; inset: 0; border-radius: 99px;
+    background: linear-gradient(90deg, rgba(126,207,138,.55), rgba(255,255,255,.08) 50%, rgba(224,128,110,.55)); }
+  .sig .r { font-size: 10.5px; color: var(--ink-2); line-height: 1.4; }
+  .sig .r em { font-style: normal; color: var(--gold); }
+  .sig.live { outline: 1px solid rgba(138,214,176,.25); }
+
+  .gauges { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+  .gauge { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 14px; background: rgba(255,255,255,.03); }
+  .gauge .arc { width: 64px; height: 64px; flex-shrink: 0; }
+  .gauge .t { font-size: 10.5px; color: var(--muted); }
+  .gauge .n { font-size: 18px; font-weight: 750; }
+  .gauge .s { font-size: 10.5px; color: var(--ink-2); line-height: 1.4; }
+  .read { font-size: 12.5px; line-height: 1.7; color: var(--ink-2); }
+  .read b { color: var(--ink); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: right; color: var(--muted); font-weight: 500; font-size: 10.5px; padding: 6px 9px; border-bottom: 1px solid var(--grid); letter-spacing: .04em; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  td { padding: 8px 9px; border-bottom: 1px solid var(--grid); text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: nowrap; }
+  td:first-child { color: var(--ink); }
+  td.rule { text-align: left; white-space: normal; min-width: 220px; }
+  .pill { padding: 2.5px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 650; }
+  .pill.win { background: rgba(52,211,153,.14); color: var(--green); }
+  .pill.loss { background: rgba(248,113,113,.14); color: var(--red); }
+  .pill.refp { background: var(--panel-2); color: var(--muted); }
+  .pill.goldp { background: rgba(251,191,36,.15); color: var(--gold); }
+  .hbar { height: 8px; border-radius: 99px; background: rgba(255,255,255,.09); overflow: hidden; position: relative; min-width: 110px; }
+  .hbar i { position: absolute; top: 0; bottom: 0; border-radius: 99px; display: block; }
+  .banner { border: 1px solid var(--border); border-radius: 13px; padding: 11px 15px; font-size: 12px; margin-bottom: 12px; display: none; backdrop-filter: blur(12px); }
+  .banner.warn { display: block; background: rgba(251,191,36,.08); color: var(--gold); border-color: rgba(251,191,36,.3); }
+  .banner.err  { display: block; background: rgba(248,113,113,.10); color: var(--red); border-color: rgba(248,113,113,.3); }
+  .loading { text-align: center; color: var(--muted); padding: 60px 0; font-size: 13px; }
+  footer { color: var(--muted); font-size: 10.5px; line-height: 1.65; margin-top: 14px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 1000px) { .two { grid-template-columns: 1fr; } }
+
+  .species { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+  .sp { border-radius: 12px; padding: 9px 11px; background: rgba(255,255,255,.03); font-size: 10.5px; color: var(--ink-2); line-height: 1.5; }
+  .sp b { color: var(--ink); font-size: 11px; }
+  .sp .bar { height: 6px; border-radius: 99px; background: rgba(255,255,255,.08); margin: 5px 0 3px; overflow: hidden; }
+  .sp .bar i { display: block; height: 100%; background: linear-gradient(90deg, #8fd694, #c9d64f); }
+
+  #feed { max-height: 380px; overflow-y: auto; margin: -2px -4px 0; padding: 0 4px; }
+  #feed::-webkit-scrollbar { width: 6px; } #feed::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 99px; }
+  .frow { display: grid; grid-template-columns: 78px 46px 54px 66px 1fr 78px 40px; gap: 10px; align-items: baseline; padding: 5px 6px; border-radius: 7px;
+    font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .frow:hover { background: rgba(255,255,255,.045); }
+  .frow + .frow { border-top: 1px solid rgba(255,255,255,.045); }
+  .ft { color: var(--muted); font-size: 10px; } .fg { color: var(--ink); font-weight: 700; }
+  .fa { font-weight: 700; font-size: 10px; letter-spacing: .08em; }
+  .fa-open { color: #8ad6b0; } .fa-short { color: #e0a06e; }
+  .spblock { margin-bottom: 10px; } .spt { font-size: 10.5px; color: var(--muted); margin: 6px 0 5px; letter-spacing: .04em; text-transform: uppercase; }
+  #tape { max-height: 420px; overflow-y: auto; margin: -2px -4px 0; padding: 0 4px; } #tape::-webkit-scrollbar { width: 6px; } #tape::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 99px; }
+  #tape .frow { grid-template-columns: 78px 110px 60px 66px 1fr 90px; }
+  .linkbtn { background: none; border: none; color: var(--teal); font-size: 11px; cursor: pointer; padding: 0; }
+  @media (max-width: 760px) { #tape .frow { grid-template-columns: 62px 84px 52px 58px 1fr; } } .fa-close { color: var(--ink-2); } .fa-stop { color: #d3c95e; } .fa-liq { color: var(--red); } .fa-evo { color: var(--gold); }
+  .fm { text-align: right; font-weight: 650; color: var(--ink-2); }
+  .fw { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+  .fp { color: var(--ink-2); text-align: right; } .fl { color: var(--muted); font-size: 10px; text-align: right; }
+  @media (max-width: 760px) {
+    main { padding: 14px 12px 30px; }
+    .topbar h1 { font-size: 14px; }
+    .tab-btn { padding: 8px 13px; font-size: 12px; } .tab-btn .mini { display: none; }
+    .card { padding: 14px 14px; border-radius: 18px; }
+    .chip .ring { width: 36px; height: 36px; font-size: 14px; } .chip .v { font-size: 14.5px; }
+    .frow { grid-template-columns: 62px 42px 48px 58px 1fr; font-size: 10px; gap: 7px; } .fp, .fl { display: none; }
+    .legend { display: none; }
+    .sgrid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+    .sig .v { font-size: 17px; }
+  }
+</style>
+</head>
+<body>
+<div id="universe"><canvas id="stars"></canvas></div>
+<div class="shell"><main>
+  <div class="topbar">
+    <div>
+      <h1>REKT Lab · Archetype Arena</h1>
+      <div class="sub">Page 3 · REKT TRADOOOR's six archetypes and four dials ported into our engine — no squeeze, 1–10x, our fee wall — plus its top-10 desks replayed fill-by-fill on Binance prices · paper only</div>
+    </div>
+    <div class="conn"><span class="dot" id="connDot"></span><span id="connTxt">Connecting…</span></div>
+  </div>
+  <div class="tabs">
+    <a class="tab-btn" href="./">Terminal<span class="mini">Strategies + Arena</span></a>
+    <a class="tab-btn" href="signals.html">Signal Desk<span class="mini">Page 1 · 50 bots</span></a>
+    <a class="tab-btn" href="copy.html">Copy Desk<span class="mini">Page 2 · 100 bots</span></a>
+    <a class="tab-btn on" href="rekt.html">REKT Lab<span class="mini">Page 3 · 100 desks</span></a>
+  </div>
+  <div class="banner" id="errBanner"></div>
+  <div id="app" class="loading">Loading Binance 5m history and replaying 100 desks…</div>
+</main></div>
+
+<template id="tpl">
+  <div class="chips">
+    <div class="chip" style="--c:var(--blue)"><div class="ring">₿</div><div><div class="k">BTC / USDT · Binance perp</div><div class="v" id="cPrice">–</div><div class="d" id="cPriceD">–</div></div></div>
+    <div class="chip" style="--c:var(--gold)"><div class="ring">☠</div><div><div class="k">Species pack</div><div class="v" id="cSpecies">–</div><div class="d" id="cSpeciesD">–</div></div></div>
+    <div class="chip" style="--c:var(--teal)"><div class="ring">☍</div><div><div class="k">Shadow desks</div><div class="v" id="cShadow">–</div><div class="d" id="cShadowD">–</div></div></div>
+    <div class="chip" style="--c:var(--vio)"><div class="ring">⚔</div><div><div class="k">Archetype Arena</div><div class="v" id="cArena" style="font-size:13px">–</div><div class="d" id="cArenaD">–</div></div></div>
+  </div>
+
+  <div class="card g-red">
+    <h2>Shadow Desks · REKT dry-run top 10, replayed on Binance <span class="tag" id="shadowTag">–</span></h2>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>Rank</th><th style="text-align:left">Desk</th><th style="text-align:left">Archetype</th><th>Their result</th><th>Same fills · our venue</th><th>Minus squeeze-forced fills</th><th>Fills replayed</th><th>Fees + funding</th></tr></thead>
+      <tbody id="shadow"></tbody></table></div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:8px" id="shadowNote">–</div>
+  </div>
+
+  <div class="card g-gold">
+    <h2>Archetype Arena · Top 10 desks <span class="tag" id="arenaTag">–</span>
+      <span class="legend"><span><i style="background:var(--green)"></i>Profit</span><span><i style="background:var(--red)"></i>Loss</span><span><i style="background:var(--teal)"></i>In position</span></span></h2>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>#</th><th>Desk</th><th style="text-align:left">Archetype · dials</th><th>Forward equity</th><th style="min-width:110px"></th><th>Trades</th><th>Status</th></tr></thead>
+      <tbody id="top10"></tbody></table></div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:8px" id="arenaNote">–</div>
+  </div>
+
+  <div class="two">
+    <div class="card g-vio">
+      <h2>Arena · Activity Log <span class="tag" id="feedTag">–</span></h2>
+      <div id="feed"></div>
+    </div>
+    <div class="card g-teal">
+      <h2>Archetype Standings <span class="tag">ours vs REKT's own dry run</span></h2>
+      <div class="species" id="species"></div>
+      <div style="font-size:10.5px;color:var(--muted);margin-top:10px">Each desk = one archetype (frozen) + four dials (Nerves → trailing-stop distance and fear exits; Aggression → entry margin, lookback and pyramid adds; Greed → trail looseness and leverage ceiling; Allegiance → which of BTC / ETH / SOL it trades) + a hidden temper (how long a Tilt Monster stays tilted). Same money rules as the main Arena. Weekly: bankrupt and bottom 10 retire; 4 seats refill by mutating a top-10 desk, the rest by random draw from the bench.</div>
+    </div>
+  </div>
+
+  <footer id="foot">–</footer>
+</template>
+<script>
+/* ===================== PAGE 3 · REKT LAB ===================== */
+const $ = id => document.getElementById(id);
+const BAR = 300e3, H1 = 3600e3, DAY = 86400e3;
+const REKT_START = Date.UTC(2026, 7, 31);          // Monday UTC · same opening bell as the REKT dry run
+const WARM = 3 * DAY;
+const REKT_SEED = 20260907;
+const R_SEATS = 100, R_KILL = 10, R_BENCH = 300, R_MUT = 4;
+const R_FEE = 0.0007, R_DEP = 1000, R_RUIN = 500, R_FUND_H = 0.0000125;
+const COINS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
+const SHADOW_FILE = 'data/rekt-top10-2026-09-05.json';
+const UNIVERSE_FILE = 'data/copy-roster-2026-09-05.json';
+const ARCH = { MOMENTUM_APE: 'Momentum Ape', MEAN_REVERTER: 'Mean Reverter', DEGEN_SCALPER: 'Degen Scalper', RANGE_TRADER: 'Range Trader', DIAMOND_HANDS: 'Diamond Hands', TILT_MONSTER: 'Tilt Monster' };
+const ARCHS = Object.keys(ARCH);
+const TIER = { nerves: ['Nerveless', 'Steel', 'Steady', 'Jumpy', 'Paranoid'], aggr: ['Pacifist', 'Timid', 'Measured', 'Aggressive', 'Feral'], greed: ['Ascetic', 'Modest', 'Hungry', 'Ravenous', 'Insatiable'], alleg: ['BTC purist', 'BTC purist', 'BTC + ETH', 'BTC + ETH + SOL', 'BTC + ETH + SOL'] };
+const DIAL_W = [3, 27, 40, 27, 3];                    // REKT's tier distribution
+const TRAIL_K = [5, 3.5, 2.5, 1.5, 1.0];             // nerves -> ATR multiple of the trailing stop
+const GREED_M = [0.6, 0.8, 1.0, 1.3, 1.6];           // greed -> trail looseness
+const LEV_FLOOR = [1, 1, 2, 2, 3], LEV_CEIL = [2, 3, 5, 8, 10];
+const ENTRY_M = [0.004, 0.003, 0.002, 0.001, 0];     // aggression -> breakout margin
+const MAX_ADDS = [0, 0, 1, 2, 3];
+const HOLD_BARS = [2, 3, 4, 6, 8];                   // scalper hold by greed
+const TEMPER_T = [12, 24, 48, 96, 192];               // tilt duration (bars)
+
+function R_rng(a) { return function() { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const pick = (rng, arr) => arr[Math.floor(rng() * arr.length) % arr.length];
+const pickW = (rng, w) => { let r = rng() * w.reduce((s, x) => s + x, 0); for (let i = 0; i < w.length; i++) { r -= w[i]; if (r < 0) return i; } return w.length - 1; };
+const state = { bars: {}, barMap: {}, ind: {}, grid: null, arena: null, shadow: null, universe: null, live: {} };
+const fmtT = ts => { const d = new Date(ts); return String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0') + ' ' + String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0'); };
+const fmtN = (x, d = 0) => x == null || Number.isNaN(x) ? '–' : x.toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d });
+const toSym = coin => coin.startsWith('k') ? '1000' + coin.slice(1) + 'USDT' : coin + 'USDT';
+async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(url.split('?')[0].split('/').slice(-1)[0] + ' ' + r.status); return r.json(); }
+const idb = { db: null,
+  open() { return new Promise(res => { if (this.db) return res(this.db); try { const r = indexedDB.open('rektLabBars', 1); r.onupgradeneeded = () => r.result.createObjectStore('bars'); r.onsuccess = () => { this.db = r.result; res(this.db); }; r.onerror = () => res(null); } catch (e) { res(null); } }); },
+  async get(k) { const db = await this.open(); if (!db) return null; return new Promise(res => { try { const q = db.transaction('bars').objectStore('bars').get(k); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); } catch (e) { res(null); } }); },
+  async set(k, v) { const db = await this.open(); if (!db) return; try { db.transaction('bars', 'readwrite').objectStore('bars').put(v, k); } catch (e) {} } };
+
+/* ---------- data ---------- */
+async function loadBars(sym, from, to) {
+  const key = sym + '|' + from;
+  let rows = state.bars[sym] || await idb.get(key) || [];
+  let t = rows.length ? rows[rows.length - 1][0] + BAR : from;
+  const before = rows.length;
+  for (let i = 0; i < 40 && t < to; i++) {
+    const r = await getJSON(`https://fapi.binance.com/fapi/v1/klines?symbol=${sym}&interval=5m&startTime=${t}&endTime=${to}&limit=1500`);
+    if (!r.length) break;
+    for (const k of r) rows.push([k[0], +k[1], +k[2], +k[3], +k[4]]);
+    if (r.length < 1500) break;
+    t = r[r.length - 1][6] + 1;
+  }
+  if (rows.length && rows[rows.length - 1][0] + BAR > Date.now()) rows.pop();
+  if (rows.length - before > 50) idb.set(key, rows);
+  state.bars[sym] = rows; state.barMap[sym] = new Map(rows.map(b => [b[0], b]));
+  return rows;
+}
+/* ---------- indicators ---------- */
+function indicators(bars) {
+  const n = bars.length, c = bars.map(b => b[4]), h = bars.map(b => b[2]), l = bars.map(b => b[3]);
+  const sma = (a, N) => { const o = new Float64Array(n).fill(NaN); let s = 0; for (let i = 0; i < n; i++) { s += a[i]; if (i >= N) s -= a[i - N]; if (i >= N - 1) o[i] = s / N; } return o; };
+  const sd = (a, N, m) => { const o = new Float64Array(n).fill(NaN); let s = 0, s2 = 0; for (let i = 0; i < n; i++) { s += a[i]; s2 += a[i] * a[i]; if (i >= N) { s -= a[i - N]; s2 -= a[i - N] * a[i - N]; } if (i >= N - 1) { const mu = s / N; o[i] = Math.sqrt(Math.max(0, s2 / N - mu * mu)); } } return o; };
+  const rmax = (a, N) => { const o = new Float64Array(n).fill(NaN); const dq = []; for (let i = 0; i < n; i++) { while (dq.length && a[dq[dq.length - 1]] <= a[i]) dq.pop(); dq.push(i); while (dq[0] <= i - N) dq.shift(); if (i >= N - 1) o[i] = a[dq[0]]; } return o; };
+  const rmin = (a, N) => { const o = new Float64Array(n).fill(NaN); const dq = []; for (let i = 0; i < n; i++) { while (dq.length && a[dq[dq.length - 1]] >= a[i]) dq.pop(); dq.push(i); while (dq[0] <= i - N) dq.shift(); if (i >= N - 1) o[i] = a[dq[0]]; } return o; };
+  const atr = new Float64Array(n).fill(NaN); { let a = null; for (let i = 1; i < n; i++) { const tr = Math.max(h[i] - l[i], Math.abs(h[i] - c[i - 1]), Math.abs(l[i] - c[i - 1])); a = a === null ? tr : (a * 13 + tr) / 14; if (i >= 14) atr[i] = a; } }
+  const out = { c, h, l, atr, sma20: sma(c, 20), sd20: sd(c, 20), sma50: sma(c, 50), sma200: sma(c, 200), hh: {}, ll: {} };
+  for (const N of [20, 30, 40, 60, 80, 120, 160]) { out.hh[N] = rmax(h, N); out.ll[N] = rmin(l, N); }
+  return out;
+}
+/* ---------- genes ---------- */
+let R_ID = 0;
+function R_draw(rng, birth) {
+  const g = { id: 'R' + String(++R_ID).padStart(3, '0'), arch: pick(rng, ARCHS), nerves: pickW(rng, DIAL_W), aggr: pickW(rng, DIAL_W), greed: pickW(rng, DIAL_W), alleg: pickW(rng, DIAL_W), temper: pickW(rng, DIAL_W), birth, parent: null };
+  const lo = LEV_FLOOR[g.aggr], hi = Math.max(LEV_FLOOR[g.aggr], LEV_CEIL[g.greed]);
+  g.lev = lo + Math.floor(rng() * (hi - lo + 1)) % (hi - lo + 1);
+  return g;
+}
+function R_mut(rng, par, birth) {
+  const g = { ...par, id: 'R' + String(++R_ID).padStart(3, '0'), birth, parent: par.id };
+  const k = pick(rng, ['nerves', 'aggr', 'greed', 'alleg', 'lev']);
+  if (k === 'lev') { const lo = LEV_FLOOR[g.aggr], hi = Math.max(lo, LEV_CEIL[g.greed]); g.lev = lo + Math.floor(rng() * (hi - lo + 1)) % (hi - lo + 1); }
+  else g[k] = pickW(rng, DIAL_W);
+  return g;
+}
+const coinsOf = g => g.alleg <= 1 ? ['BTCUSDT'] : g.alleg === 2 ? ['BTCUSDT', 'ETHUSDT'] : COINS;
+function R_desc(g, s) { return s ? `${ARCH[g.arch]} · ${TIER.nerves[g.nerves]} / ${TIER.aggr[g.aggr]} / ${TIER.greed[g.greed]}` : `${ARCH[g.arch]} · nerves ${TIER.nerves[g.nerves]} · aggression ${TIER.aggr[g.aggr]} · greed ${TIER.greed[g.greed]} · ${TIER.alleg[g.alleg]} · ${g.lev}x`; }
+
+/* ---------- desk simulator: one desk, several books, REKT mechanics on our money rules ---------- */
+function R_score(g, fromTs, toTs, out) {
+  const grid = state.grid; if (!grid || !grid.length) return { ret: 0, trades: 0, liqs: 0, inPos: 0, open: [] };
+  const coins = coinsOf(g), nB = coins.length, L = g.lev;
+  const trailK = TRAIL_K[g.nerves] * GREED_M[g.greed], fear = g.nerves >= 3 ? (g.nerves === 4 ? 1 : 3) : 0;
+  const N = g.arch === 'RANGE_TRADER' ? [160, 120, 80, 60, 40][g.aggr] : [80, 60, 40, 30, 20][g.aggr];
+  const Z = [3, 2.5, 2.2, 2, 1.8][g.aggr], burst = [0.006, 0.005, 0.004, 0.003, 0.0025][g.aggr], m = ENTRY_M[g.aggr];
+  let cash = 1, trades = 0, liqs = 0, tiltUntil = -1, diamondDone = false; const pos = new Map();
+  const rec = (ts, act, coin, side, px, usd, eq, why) => { if (out) out.push({ ts, act, coin, side, px, g, usd: usd * R_DEP, bal: eq * R_DEP, why }); };
+  const equity = i => { let eq = cash; for (const p of pos.values()) { const b = state.barMap[p.sym].get(grid[i]); const px = b ? b[4] : p.last; p.last = px; eq += p.alloc + p.N * p.side * (px / p.entry - 1) - p.fund; } return eq; };
+  const closeP = (p, px, i, act, why) => { const pnl = p.N * p.side * (px / p.entry - 1); cash += p.alloc + pnl - p.N * R_FEE - p.fund; trades++; pos.delete(p.sym); const net = pnl - p.N * R_FEE * 2 - p.fund; if (net < 0 && g.arch === 'TILT_MONSTER') tiltUntil = i + TEMPER_T[g.temper]; rec(grid[i] + BAR, act, p.coin, p.side, px, net, cash + [...pos.values()].reduce((s, q) => s + q.alloc, 0), why); };
+  const openP = (sym, side, px, i, why, sizeMult) => { const eq = equity(i); if (eq <= 0.05) return; const alloc = Math.min(cash, eq / nB * (sizeMult || 1)); if (alloc <= 0.01) return; const Nn = alloc * L; cash -= alloc + Nn * R_FEE;
+    pos.set(sym, { sym, coin: sym.replace('USDT', ''), side, alloc, alloc0: alloc, N: Nn, N0: Nn, entry: px, extreme: px, openedIdx: i, fund: 0, adds: 0, last: px }); rec(grid[i] + BAR, 'OPEN', sym.replace('USDT', ''), side, px, alloc, cash + [...pos.values()].reduce((s, q) => s + q.alloc, 0), why); };
+  for (let i = 0; i < grid.length; i++) {
+    const t = grid[i]; if (t + BAR <= fromTs) continue; if (t > toTs) break;
+    const tilted = g.arch === 'TILT_MONSTER' && i <= tiltUntil;
+    // 1) manage open books
+    for (const p of [...pos.values()]) {
+      const b = state.barMap[p.sym].get(t); if (!b) continue; const I = state.ind[p.sym]; const j = I.idx.get(t); const atr = I.atr[j];
+      p.fund += p.N * R_FUND_H / 12;
+      const adverse = p.side === 1 ? b[3] : b[2];
+      if (p.side * (adverse / p.entry - 1) * L * (p.N / (p.alloc * L)) <= -0.95) { cash += p.alloc * 0.02; liqs++; trades++; pos.delete(p.sym); rec(t + BAR, 'LIQ', p.coin, p.side, adverse, -p.alloc * 0.98, cash, `margin gone at ${L}x`); continue; }
+      if (p.side === 1) p.extreme = Math.max(p.extreme, b[2]); else p.extreme = Math.min(p.extreme, b[3]);
+      const k = (tilted ? 0.5 : 1) * trailK * (g.arch === 'DIAMOND_HANDS' ? 3 : 1);
+      const stop = p.side === 1 ? p.extreme - k * atr : p.extreme + k * atr;
+      const held = i - p.openedIdx;
+      if (!Number.isNaN(atr) && (p.side === 1 ? b[3] <= stop : b[2] >= stop)) { closeP(p, stop, i, 'STOP', `trail ${k.toFixed(1)}×ATR`); continue; }
+      if (fear && held >= fear && p.side * (b[4] / p.entry - 1) <= -0.5 * atr / p.entry) { closeP(p, b[4], i, 'CLOSE', 'fear exit'); continue; }
+      if (g.arch === 'DEGEN_SCALPER' && held >= HOLD_BARS[g.greed]) { closeP(p, b[4], i, 'CLOSE', `time stop ${HOLD_BARS[g.greed]} bars`); continue; }
+      if (g.arch === 'MEAN_REVERTER') { const z = (b[4] - I.sma20[j]) / I.sd20[j]; if (Math.abs(z) <= 0.3) { closeP(p, b[4], i, 'CLOSE', 'mean touched'); continue; } if (held >= 96) { closeP(p, b[4], i, 'CLOSE', 'time stop 8h'); continue; } }
+      if (g.arch === 'RANGE_TRADER') { const hh = I.hh[N][j], ll = I.ll[N][j]; const q = (b[4] - ll) / Math.max(1e-9, hh - ll); const tgt = g.greed >= 3 ? (p.side === 1 ? q >= 0.8 : q <= 0.2) : (p.side === 1 ? q >= 0.5 : q <= 0.5); if (tgt) { closeP(p, b[4], i, 'CLOSE', g.greed >= 3 ? 'far edge of the box' : 'middle of the box'); continue; } }
+      if ((g.arch === 'MOMENTUM_APE' || g.arch === 'TILT_MONSTER') && p.adds < MAX_ADDS[g.aggr] && p.side * (b[4] / p.entry - 1) >= atr * (p.adds + 1) / p.entry) {
+        const addAlloc = Math.min(cash, p.alloc0 * 0.5); if (addAlloc > 0.005) { const addN = addAlloc * L; cash -= addAlloc + addN * R_FEE; p.entry = (p.entry * p.N + b[4] * addN) / (p.N + addN); p.N += addN; p.alloc += addAlloc; p.adds++; trades++; rec(t + BAR, 'ADD', p.coin, p.side, b[4], addAlloc, cash + [...pos.values()].reduce((s, q) => s + q.alloc, 0), `pyramid add #${p.adds}`); }
+      }
+    }
+    // 2) entries
+    for (const sym of coins) {
+      if (pos.has(sym)) continue;
+      const b = state.barMap[sym].get(t); if (!b) continue; const I = state.ind[sym]; const j = I.idx.get(t); if (j < 1) continue;
+      const cl = b[4], pc = I.c[j - 1], atr = I.atr[j]; if (Number.isNaN(atr)) continue;
+      let side = 0, why = '';
+      if (g.arch === 'MOMENTUM_APE' || g.arch === 'TILT_MONSTER') {
+        if (tilted) { const r = cl / pc - 1; if (Math.abs(r) >= 0.002) { side = r > 0 ? 1 : -1; why = 'revenge entry'; } }
+        else { const hh = I.hh[N][j - 1], ll = I.ll[N][j - 1]; if (cl > hh * (1 + m)) { side = 1; why = `breakout ${N}`; } else if (cl < ll * (1 - m)) { side = -1; why = `breakdown ${N}`; } }
+      } else if (g.arch === 'MEAN_REVERTER') { const z = (cl - I.sma20[j]) / I.sd20[j]; if (z >= Z) { side = -1; why = `fade z ${z.toFixed(1)}`; } else if (z <= -Z) { side = 1; why = `fade z ${z.toFixed(1)}`; } }
+      else if (g.arch === 'DEGEN_SCALPER') { const r = cl / pc - 1; if (Math.abs(r) >= burst) { side = r > 0 ? 1 : -1; why = `scalp burst ${(r * 100).toFixed(2)}%`; } }
+      else if (g.arch === 'RANGE_TRADER') { const hh = I.hh[N][j - 1], ll = I.ll[N][j - 1]; const q = (cl - ll) / Math.max(1e-9, hh - ll); if (q <= 0.1) { side = 1; why = `box floor ${N}`; } else if (q >= 0.9) { side = -1; why = `box ceiling ${N}`; } }
+      else if (g.arch === 'DIAMOND_HANDS') { if (!diamondDone && !Number.isNaN(I.sma200[j]) && I.sma50[j] > I.sma200[j] && cl > I.hh[40][j - 1]) { side = 1; why = 'conviction entry · never sells'; diamondDone = true; } }
+      if (side) openP(sym, side, cl, i, why, (tilted ? 2 : 1) * ((g.arch === 'MOMENTUM_APE' || g.arch === 'TILT_MONSTER') && MAX_ADDS[g.aggr] > 0 ? 0.6 : 1));   // apes keep 40% in reserve for pyramid adds
+    }
+    if (equity(i) * R_DEP <= R_RUIN * 0.2 && pos.size === 0) break;
+  }
+  let lastI = grid.length - 1; while (lastI > 0 && grid[lastI] > toTs) lastI--;
+  const eqEnd = equity(lastI);
+  return { ret: (eqEnd - 1) * 100, trades, liqs, inPos: pos.size, open: [...pos.values()].map(p => ({ coin: p.coin, side: p.side })) };
+}
+function R_replay() {
+  const rng = R_rng(REKT_SEED); R_ID = 0;
+  let pool = []; const bench = [];
+  for (let i = 0; i < R_SEATS; i++) pool.push(R_draw(rng, REKT_START));
+  for (let i = 0; i < R_BENCH; i++) bench.push(R_draw(rng, REKT_START));
+  const now = state.grid[state.grid.length - 1] + BAR;
+  const evo = []; let gen = 0, deaths = 0;
+  for (let W = REKT_START + 7 * DAY; W <= now; W += 7 * DAY) {
+    gen++;
+    const scored = pool.map(g => ({ g, s: R_score(g, g.birth, W) }));
+    const bankrupt = scored.filter(x => R_DEP * (1 + x.s.ret / 100) <= R_RUIN); const bId = new Set(bankrupt.map(x => x.g.id));
+    const exempt = x => (W - x.g.birth < 14 * DAY) && x.s.trades < 5;
+    const killable = scored.filter(x => !bId.has(x.g.id) && !exempt(x)).sort((a, b) => a.s.ret - b.s.ret || a.g.id.localeCompare(b.g.id));
+    const dead = bankrupt.concat(killable.slice(0, Math.min(R_KILL, killable.length))); const dId = new Set(dead.map(x => x.g.id));
+    const top = scored.filter(x => !dId.has(x.g.id)).sort((a, b) => b.s.ret - a.s.ret || a.g.id.localeCompare(b.g.id)).slice(0, 10);
+    const born = [];
+    for (let k = 0; k < dead.length; k++) {
+      if (k < R_MUT && top.length) { const par = pick(rng, top).g; const c = R_mut(rng, par, W); born.push(c); evo.push({ ts: W, act: 'BORN', g: c, why: `mutation of ${par.id}` }); }
+      else if (bench.length) { const q = Math.floor(rng() * bench.length) % bench.length; const c = bench.splice(q, 1)[0]; c.birth = W; born.push(c); evo.push({ ts: W, act: 'BORN', g: c, why: 'drawn from bench' }); }
+      else { const c = R_draw(rng, W); born.push(c); evo.push({ ts: W, act: 'BORN', g: c, why: 'fresh draw' }); }
+    }
+    for (const x of dead) evo.push({ ts: W, act: 'RETIRED', g: x.g, why: bId.has(x.g.id) ? `bankrupt at $${(R_DEP * (1 + x.s.ret / 100)).toFixed(0)}` : `bottom ${R_KILL} · ${x.s.ret.toFixed(1)}%`, ret: x.s.ret });
+    pool = pool.filter(g => !dId.has(g.id)).concat(born); deaths += dead.length;
+  }
+  return { pool, gen, deaths, now, bench: bench.length, evo };
+}
+
+/* ---------- shadow desks: replay the REKT top 10's own fills on Binance prices with our money rules ---------- */
+function shadowReplay(desk, opts) {
+  const SCALE = R_DEP / state.shadowMeta.startingCashUsd;           // their $10,000 stack -> our $1,000
+  const fills = desk.fills.filter(f => !(opts.noSqueeze && f[6] === 'SQUEEZE_FORCED')).slice().sort((a, b) => a[0] - b[0]);
+  let cash = 1, realized = 0, fees = 0, funding = 0, used = 0, skipped = 0, skippedUsd = 0, dead = null;
+  const pos = new Map();   // sym -> {side, N (notional, our units), entry}
+  const priceAt = (sym, ts) => { const b = state.barMap[sym] && state.barMap[sym].get(Math.floor((ts - 1) / BAR) * BAR); return b ? b[4] : null; };
+  const equityAt = ts => { let eq = cash; for (const p of pos.values()) { const px = priceAt(p.sym, ts) || p.entry; eq += p.N * p.side * (px / p.entry - 1); } return eq; };
+  const curve = [];
+  let lastTs = fills.length ? fills[0][0] : REKT_START;
+  const mark = ts => { // funding + liquidation check between fills, bar by bar
+    for (let t = Math.floor(lastTs / BAR) * BAR + BAR; t <= ts && !dead; t += BAR) {
+      let notional = 0; for (const p of pos.values()) { notional += p.N; const c = p.N * R_FUND_H / 12; cash -= c; funding += c; }
+      let eq = cash; for (const p of pos.values()) { const b = state.barMap[p.sym].get(t); if (!b) continue; const adverse = p.side === 1 ? b[3] : b[2]; eq += p.N * p.side * (adverse / p.entry - 1); }
+      if (notional > 0 && eq <= 0.005 * notional) { dead = t; cash = 0; pos.clear(); }
+    }
+    lastTs = ts;
+  };
+  for (const f of fills) {
+    const [ts, pair, dir, deltaUsd, px, pnl, reason] = f; const sym = toSym(pair);
+    if (!state.universe.has(sym) || !state.barMap[sym]) { skipped++; skippedUsd += Math.abs(deltaUsd); continue; }
+    mark(ts); if (dead) break;
+    const ourPx = priceAt(sym, ts); if (!ourPx) { skipped++; skippedUsd += Math.abs(deltaUsd); continue; }
+    const delta = deltaUsd * SCALE / R_DEP;                    // notional in equity units (1 = $1,000)
+    const p = pos.get(sym); used++;
+    const fee = Math.abs(delta) * R_FEE; cash -= fee; fees += fee;
+    if (delta > 0) {   // increase in direction dir
+      if (p && p.side !== dir) { const r = p.N * p.side * (ourPx / p.entry - 1); cash += r; realized += r; pos.delete(sym); const rest = delta - p.N; if (rest > 0) pos.set(sym, { sym, side: dir, N: rest, entry: ourPx }); }
+      else if (p) { p.entry = (p.entry * p.N + ourPx * delta) / (p.N + delta); p.N += delta; }
+      else pos.set(sym, { sym, side: dir, N: delta, entry: ourPx });
+    } else {           // reduce
+      if (!p) continue; const red = Math.min(p.N, -delta); const r = red * p.side * (ourPx / p.entry - 1); cash += r; realized += r; p.N -= red; if (p.N <= 1e-9) pos.delete(sym);
+    }
+    curve.push([ts, equityAt(ts)]);
+  }
+  const endTs = state.shadowMeta.endTs; mark(endTs);
+  const eq = dead ? 0 : equityAt(endTs);
+  return { ret: (eq - 1) * 100, realized: realized * R_DEP, fees: fees * R_DEP, funding: funding * R_DEP, used, skipped, skippedUsd, dead, open: pos.size, curve };
+}
+
+/* ---------- rendering ---------- */
+function renderArena() {
+  const a = state.arena; const scored = a.pool.map(g => ({ g, s: R_score(g, g.birth, a.now) })).sort((x, y) => y.s.ret - x.s.ret || x.g.id.localeCompare(y.g.id));
+  state.scored = scored;
+  const inPos = scored.filter(x => x.s.inPos > 0).length, prof = scored.filter(x => x.s.ret > 0).length;
+  const mx = Math.max(1, ...scored.map(x => Math.abs(x.s.ret)));
+  $('top10').innerHTML = scored.slice(0, 10).map((x, i) => { const eq = R_DEP * (1 + x.s.ret / 100), w = Math.min(100, Math.abs(x.s.ret) / mx * 100);
+    const st = x.s.inPos ? `<span class="pill" style="background:rgba(138,214,176,.16);color:var(--teal)">${x.s.open.map(o => (o.side === 1 ? 'L ' : 'S ') + o.coin).join(', ')}</span>` : '<span class="pill refp">FLAT</span>';
+    return `<tr><td>${i + 1}</td><td><b>${x.g.id}</b></td><td class="rule">${R_desc(x.g)}</td><td class="${x.s.ret >= 0 ? 'up' : 'down'}"><b>$${fmtN(eq)}</b> (${x.s.ret >= 0 ? '+' : ''}${x.s.ret.toFixed(2)}%)</td><td><div class="hbar"><i style="left:0;width:${w}%;background:${x.s.ret >= 0 ? 'linear-gradient(90deg,#8fd694,#c9d64f)' : 'linear-gradient(90deg,#e0806e,#c96a5a)'}"></i></div></td><td>${x.s.trades}${x.s.liqs ? ` <span class="down">☠${x.s.liqs}</span>` : ''}</td><td>${st}</td></tr>`; }).join('');
+  const avg = scored.reduce((s, x) => s + x.s.ret, 0) / scored.length, med = scored.map(x => x.s.ret).sort((p, q) => p - q)[Math.floor(scored.length / 2)];
+  $('arenaTag').textContent = `Gen ${a.gen} · ${a.deaths} retired · ${prof}/${R_SEATS} profitable · ${inPos}/${R_SEATS} in position · bench ${a.bench}`;
+  $('arenaNote').textContent = `Forward-only since ${new Date(REKT_START).toISOString().slice(0, 10)} (REKT's own opening bell). Seat average ${avg >= 0 ? '+' : ''}${avg.toFixed(2)}% · median ${med >= 0 ? '+' : ''}${med.toFixed(2)}% · Binance USDT-M 5m · fee 0.07%/side + funding drag · liquidation on the wick · no squeeze, leverage 1–10x by the desk's own dials.`;
+  $('cArena').textContent = `Gen ${a.gen} · ${inPos}/${R_SEATS} in position`; $('cArenaD').textContent = `Leader ${scored[0].g.id} ${scored[0].s.ret >= 0 ? '+' : ''}${scored[0].s.ret.toFixed(2)}%`;
+  // archetype standings, REKT-style
+  const REKT_REF = { RANGE_TRADER: [28, -32.8], MOMENTUM_APE: [6, -60.1], MEAN_REVERTER: [29, -83.1], TILT_MONSTER: [29, -81.1], DEGEN_SCALPER: [4, -99.0], DIAMOND_HANDS: [3, -26.4] };
+  const born = {}, alive = {}; for (const g of a.pool) alive[g.arch] = (alive[g.arch] || 0) + 1; for (const e of a.evo) if (e.act === 'RETIRED') born[e.g.arch] = (born[e.g.arch] || 0) + 1;
+  const rows = ARCHS.map(k => { const arr = scored.filter(x => x.g.arch === k); const n = arr.length, d = born[k] || 0; const avgR = n ? arr.reduce((s, x) => s + x.s.ret, 0) / n : NaN; const best = arr.slice().sort((p, q) => q.s.ret - p.s.ret)[0]; return { k, n, d, alivePct: n + d ? n / (n + d) * 100 : 0, avg: avgR, best, tr: arr.reduce((s, x) => s + x.s.trades, 0) }; }).sort((p, q) => (q.avg || -1e9) - (p.avg || -1e9));
+  $('species').innerHTML = rows.map(r => `<div class="sp"><b>${ARCH[r.k]}</b> · ${r.n} seated · ${r.d} retired<br><span class="${r.avg >= 0 ? 'up' : 'down'}">avg ${Number.isNaN(r.avg) ? '–' : (r.avg >= 0 ? '+' : '') + r.avg.toFixed(2) + '%'}</span> · ${r.tr} trades · ${r.alivePct.toFixed(0)}% alive<div class="bar"><i style="width:${Math.min(100, Math.abs(r.avg || 0) / Math.max(1, ...rows.map(x => Math.abs(x.avg || 0))) * 100)}%;${(r.avg || 0) < 0 ? 'background:linear-gradient(90deg,#e0806e,#c96a5a)' : ''}"></i></div>REKT dry run: ${REKT_REF[r.k][0]}% alive · avg ${REKT_REF[r.k][1]}%${r.best ? `<br>best ${r.best.g.id} ${r.best.s.ret >= 0 ? '+' : ''}${r.best.s.ret.toFixed(1)}%` : ''}</div>`).join('');
+  renderFeed(scored);
+}
+function renderFeed(scored) {
+  const rows = [];
+  for (const x of scored) { const log = []; R_score(x.g, x.g.birth, state.arena.now, log); for (const t of log) rows.push(t); }
+  for (const e of state.arena.evo) rows.push({ ts: e.ts, act: e.act, g: e.g, why: e.why, usd: e.ret, px: null });
+  rows.sort((a, b) => b.ts - a.ts);
+  const ACT = { OPEN: { cls: 'fa-open', txt: s => s === 1 ? 'LONG' : 'SHORT' }, ADD: { cls: 'fa-open', txt: () => 'ADD' }, CLOSE: { cls: 'fa-close', txt: () => 'CLOSE' }, STOP: { cls: 'fa-stop', txt: () => 'STOP' }, LIQ: { cls: 'fa-liq', txt: () => 'LIQ' }, BORN: { cls: 'fa-evo', txt: () => 'SEATED' }, RETIRED: { cls: 'fa-liq', txt: () => 'RETIRED' } };
+  $('feed').innerHTML = rows.slice(0, 80).map(t => { const a = ACT[t.act]; const evo = t.act === 'BORN' || t.act === 'RETIRED';
+    const money = (t.act === 'OPEN' || t.act === 'ADD') ? '$' + t.usd.toFixed(0) : evo ? '' : (t.usd >= 0 ? '+$' : '-$') + Math.abs(t.usd).toFixed(0);
+    const mcls = (t.act === 'OPEN' || t.act === 'ADD' || evo) ? '' : (t.usd >= 0 ? 'up' : 'down');
+    const why = evo ? `${t.why} · ${R_desc(t.g, true)}` : `${t.coin} · ${t.why}`;
+    return `<div class="frow"><span class="ft">${fmtT(t.ts)}</span><span class="fg">${t.g.id}</span><span class="fa ${a.cls}">${a.txt(t.side)}</span><span class="fm ${mcls}">${money}</span><span class="fw">${why}</span><span class="fp">${t.px ? '@' + fmtN(t.px, t.px < 100 ? 2 : 0) : ''}</span><span class="fl">${t.g.lev}x</span></div>`; }).join('') || '<div style="color:var(--muted);padding:16px;text-align:center">No activity yet</div>';
+  const n24 = rows.filter(x => x.ts >= Date.now() - DAY && x.act !== 'BORN' && x.act !== 'RETIRED').length;
+  $('feedTag').textContent = `${rows.length} events · ${n24} desk actions in the last 24h`;
+}
+function renderShadow() {
+  const S = state.shadow; if (!S) return;
+  const rows = S.desks.map(d => { const all = shadowReplay(d, {}), nsq = shadowReplay(d, { noSqueeze: true }); const theirRet = (d.equityUsd / state.shadowMeta.startingCashUsd - 1) * 100; return { d, all, nsq, theirRet }; });
+  state.shadowRows = rows;
+  $('shadow').innerHTML = rows.map(r => `<tr><td>#${r.d.rank}</td><td><b>Tradooor #${r.d.id}</b></td><td style="text-align:left">${ARCH[r.d.archetype] || r.d.archetype || '–'}</td><td class="${r.theirRet >= 0 ? 'up' : 'down'}">${r.theirRet >= 0 ? '+' : ''}${fmtN(r.theirRet, 1)}%</td><td class="${r.all.ret >= 0 ? 'up' : 'down'}">${r.all.dead ? '<span class="pill loss">REKT</span> ' : ''}${r.all.ret >= 0 ? '+' : ''}${fmtN(r.all.ret, 1)}%</td><td class="${r.nsq.ret >= 0 ? 'up' : 'down'}">${r.nsq.dead ? '<span class="pill loss">REKT</span> ' : ''}${r.nsq.ret >= 0 ? '+' : ''}${fmtN(r.nsq.ret, 1)}%</td><td>${r.all.used}/${r.d.fills.length}</td><td>$${fmtN(r.all.fees + r.all.funding)}</td></tr>`).join('');
+  const nUsed = rows.reduce((s, r) => s + r.all.used, 0), nAll = rows.reduce((s, r) => s + r.d.fills.length, 0), dead = rows.filter(r => r.all.dead).length, deadN = rows.filter(r => r.nsq.dead).length;
+  const avgTheir = rows.reduce((s, r) => s + r.theirRet, 0) / rows.length, avgAll = rows.reduce((s, r) => s + r.all.ret, 0) / rows.length, avgN = rows.reduce((s, r) => s + r.nsq.ret, 0) / rows.length;
+  $('shadowTag').textContent = `${S.source} · ${rows.length} desks · ${nUsed}/${nAll} fills replayable on Binance`;
+  $('shadowNote').innerHTML = `Each desk starts with our $1,000 (their $10,000 stack scaled ×0.1) and its <b>own</b> fill log is replayed at the Binance 5m close of the same candle, with our 0.07%/side fee, funding drag and a 0.5%-of-notional maintenance line. Fills on coins Binance does not list are skipped (${nAll - nUsed}). Their reported result averaged <b>${avgTheir >= 0 ? '+' : ''}${avgTheir.toFixed(0)}%</b>; on our venue and costs the same fills average <b>${avgAll >= 0 ? '+' : ''}${avgAll.toFixed(0)}%</b> (${dead}/${rows.length} blown up); dropping every squeeze-forced fill leaves <b>${avgN >= 0 ? '+' : ''}${avgN.toFixed(0)}%</b> (${deadN} blown up). The gap between the three columns is how much of the "top 10" was venue, forced leverage and survivorship rather than method.`;
+}
+function renderAll() {
+  if ($('app').classList.contains('loading')) { $('app').classList.remove('loading'); $('app').innerHTML = $('tpl').innerHTML; }
+  const b = state.bars.BTCUSDT; if (b && b.length) { const px = b[b.length - 1][4], p24 = b[b.length - 289] ? (px / b[b.length - 289][4] - 1) * 100 : 0; $('cPrice').textContent = '$' + fmtN(px); $('cPriceD').innerHTML = `<span class="${p24 >= 0 ? 'up' : 'down'}">${p24 >= 0 ? '+' : ''}${p24.toFixed(2)}%</span> 24h`; }
+  renderArena(); renderShadow();
+  const S = state.shadow; if (S) { $('cShadow').textContent = `${S.desks.length} desks`; $('cShadowD').textContent = 'REKT dry-run top 10 · replayed on Binance'; }
+  $('cSpecies').textContent = `${ARCHS.length} archetypes`; $('cSpeciesD').textContent = '4 dials × 5 tiers · 100 desks + 300 bench';
+  $('foot').innerHTML = `REKT Lab v1.0 · seed ${REKT_SEED} · archetype pack ported from tradooor.rekt.com (engine 0.13.0) · pyramid adds, ATR trailing stops, fear/time stops, multi-book desks · no squeeze, 1–10x · weekly evolution on Monday 00:00 UTC · paper only.<br>Data: Binance USDT-M 5m since ${new Date(REKT_START - WARM).toISOString().slice(0, 10)} (cached in IndexedDB) · shadow fills from ${SHADOW_FILE}.`;
+}
+window.REKT = { state, replay: R_replay, score: R_score, desc: R_desc, shadow: shadowReplay };
+
+async function boot() {
+  const dot = $('connDot'), txt = $('connTxt');
+  try {
+    txt.textContent = 'Loading universe + shadow fills…';
+    const [uni, sh] = await Promise.all([getJSON(UNIVERSE_FILE + '?v=1').catch(() => null), getJSON(SHADOW_FILE + '?v=' + Math.floor(Date.now() / H1)).catch(() => null)]);
+    state.universe = new Set(uni ? uni.binanceUniverse : COINS);
+    state.shadow = sh;
+    txt.textContent = 'Loading Binance 5m bars…';
+    const from = REKT_START - WARM, to = Date.now();
+    for (const sym of COINS) { await loadBars(sym, from, to); state.ind[sym] = indicators(state.bars[sym]); state.ind[sym].idx = new Map(state.bars[sym].map((b, i) => [b[0], i])); }
+    const grid = []; for (let t = from; t + BAR <= to; t += BAR) grid.push(t); state.grid = grid;
+    if (sh) {
+      const tsAll = sh.desks.flatMap(d => d.fills.map(f => f[0])); const t0 = Math.floor(Math.min(...tsAll) / BAR) * BAR - BAR, t1 = Math.max(...tsAll) + 6 * H1;
+      state.shadowMeta = { startingCashUsd: sh.startingCashUsd, endTs: t1 };
+      const syms = [...new Set(sh.desks.flatMap(d => d.fills.map(f => toSym(f[1]))))].filter(s => state.universe.has(s) && !COINS.includes(s));
+      let k = 0; for (const s of syms) { k++; txt.textContent = `Loading shadow prices ${k}/${syms.length}…`; try { await loadBars(s, t0, t1); } catch (e) { state.universe.delete(s); } }
+    }
+    txt.textContent = 'Replaying 100 desks…';
+    state.arena = R_replay();
+    renderAll();
+    dot.className = 'dot ok'; txt.textContent = 'Live · ' + new Date().toISOString().slice(11, 19) + ' UTC';
+  } catch (e) {
+    dot.className = 'dot err'; txt.textContent = 'Error';
+    const b = $('errBanner'); b.className = 'banner err'; b.textContent = 'Load failed: ' + e.message + ' — will retry in 10 minutes.';
+    if ($('app').classList.contains('loading')) $('app').textContent = 'Could not load: ' + e.message;
+  }
+}
+(function stars() { const c = $('stars'); if (!c) return; const ctx = c.getContext('2d'); const draw = () => { const w = c.width = innerWidth, h = c.height = innerHeight; ctx.clearRect(0, 0, w, h); const r = R_rng(13);
+  for (let i = 0; i < 900; i++) { const x = r() * w, y = r() * h, s = r(); ctx.fillStyle = `rgba(${200 + s * 55},${210 + s * 40},255,${0.15 + s * 0.6})`; ctx.beginPath(); ctx.arc(x, y, s < 0.92 ? 0.6 + s * 0.6 : 1.4, 0, 6.283); ctx.fill(); } };
+  draw(); addEventListener('resize', draw); })();
+boot();
+setInterval(boot, 10 * 60e3);
+
+</script>
+</body>
+</html>
