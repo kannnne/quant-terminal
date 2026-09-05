@@ -171,7 +171,31 @@
     background: linear-gradient(90deg, #8fd694, #c9d64f); }
   .segbar { display: flex; height: 10px; border-radius: 99px; overflow: hidden; gap: 2px; }
   .segbar i { display: block; height: 100%; }
+
+  /* ---- arena activity feed ---- */
+  #arenaFeed { max-height: 360px; overflow-y: auto; margin: -2px -4px 0; padding: 0 4px; }
+  #arenaFeed::-webkit-scrollbar { width: 6px; }
+  #arenaFeed::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 99px; }
+  .frow { display: grid; grid-template-columns: 78px 46px 54px 66px 1fr 78px 62px;
+    gap: 10px; align-items: baseline; padding: 5px 6px; border-radius: 7px;
+    font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .frow:hover { background: rgba(255,255,255,.045); }
+  .frow + .frow { border-top: 1px solid rgba(255,255,255,.045); }
+  .ft { color: var(--muted); font-size: 10px; }
+  .fg { color: var(--ink); font-weight: 700; }
+  .fa { font-weight: 700; font-size: 10px; letter-spacing: .08em; }
+  .fa-open  { color: #8ad6b0; }
+  .fa-close { color: var(--ink-2); }
+  .fa-stop  { color: #d3c95e; }
+  .fa-liq   { color: var(--red); }
+  .fm { text-align: right; font-weight: 650; color: var(--ink-2); }
+  .fw { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+  .fp { color: var(--ink-2); text-align: right; }
+  .fl { color: var(--muted); font-size: 10px; text-align: right; }
   @media (max-width: 760px) {
+    .frow { grid-template-columns: 62px 42px 48px 58px 1fr; font-size: 10px; gap: 7px; }
+    .fp, .fl { display: none; }
+    #arenaFeed { max-height: 300px; }
     main { padding: 14px 12px 30px; }
     .topbar h1 { font-size: 14px; }
     .tabs { flex-wrap: wrap; }
@@ -248,6 +272,19 @@
     </table>
     </div>
     <div style="font-size:10.5px;color:var(--muted);margin-top:8px">Full leaderboard, evolution log, and rules live on the standalone Arena page (authoritative); this summary view shares the same data and seed, syncing about every 10 minutes.</div>
+  </div>
+
+  <div class="card g-teal">
+    <h2>Arena &middot; Activity Log <span class="tag" id="feedTag">building&hellip;</span>
+      <span class="legend" style="margin-left:auto">
+        <span><i style="background:#8ad6b0;border-radius:50%"></i>Open</span>
+        <span><i style="background:var(--ink-2);border-radius:50%"></i>Close</span>
+        <span><i style="background:#d3c95e;border-radius:50%"></i>Stop</span>
+        <span><i style="background:var(--red);border-radius:50%"></i>Liquidation</span>
+      </span>
+    </h2>
+    <div id="arenaFeed"></div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:8px">Every entry, exit, stop and liquidation across all 20 seats, newest first &mdash; reconstructed from Binance candles on each load, so it always matches the leaderboard above.</div>
   </div>
 
   <div class="card g-blue" id="healthCard">
@@ -896,16 +933,18 @@ function A_pos(g) {
   A_posCache.set(key, pos);
   return pos;
 }
-function A_score(g, fromTs, toTs) {
+function A_score(g, fromTs, toTs, out) {
   const bars = state.arenaBars[g.tf];
   const pos = A_pos(g);
   const L = g.lev || 1, barH = A_TFMS[g.tf] / 3600e3;
   const FUND_H = 0.0000125;                       // symmetric drag: both sides pay, conservative for shorts
-  let eq = 1, side = 0, entryP = 0, entryEq = 0, heldBars = 0;
+  let eq = 1, side = 0, entryP = 0, entryEq = 0, heldBars = 0, eqAtOpen = 1;
   let trades = 0, liqs = 0, slArmed = true, stopSide = 0;
   const factorAt = px => 1 + side * L * (px / entryP - 1) - heldBars * barH * L * FUND_H;
-  const open = (px) => { entryEq = eq * (1 - A_FEE * L); entryP = px; heldBars = 0; };
+  const open = (px) => { eqAtOpen = eq; entryEq = eq * (1 - A_FEE * L); entryP = px; heldBars = 0; };
   const settle = (px) => { eq = entryEq * Math.max(0, factorAt(px)) * (1 - A_FEE * L); trades++; };
+  const rec = (ts, act, px, sd) => { if (out) out.push({ ts, act, px, side: sd, g,
+    usd: act === "OPEN" ? eq * A_DEP : (eq - eqAtOpen) * A_DEP, bal: eq * A_DEP }); };
   for (let i = 1; i < bars.length; i++) {
     const ts = bars[i][0];
     if (ts <= fromTs) continue;
@@ -915,18 +954,18 @@ function A_score(g, fromTs, toTs) {
       heldBars++;
       const adverse = side === 1 ? lo : hi;       // worst point of the bar for this side
       if (1 + side * L * (adverse / entryP - 1) - heldBars * barH * L * FUND_H <= 0.05) {
-        eq = entryEq * 0.02; liqs++; trades++; stopSide = side; side = 0; slArmed = false;
+        eq = entryEq * 0.02; liqs++; trades++; rec(ts, "LIQ", adverse, side); stopSide = side; side = 0; slArmed = false;
       } else if (g.sl > 0) {
         const slPx = side === 1 ? entryP * (1 - g.sl) : entryP * (1 + g.sl);
-        if (side === 1 ? lo <= slPx : hi >= slPx) { settle(slPx); stopSide = side; side = 0; slArmed = false; }
+        if (side === 1 ? lo <= slPx : hi >= slPx) { settle(slPx); rec(ts, "STOP", slPx, side); stopSide = side; side = 0; slArmed = false; }
       }
     }
     const want = pos[i];
     if (!slArmed) { if (want !== stopSide) slArmed = true; }
-    else if (side === 0 && want !== 0) { open(c); side = want; }
+    else if (side === 0 && want !== 0) { open(c); side = want; rec(ts, "OPEN", c, want); }
     else if (side !== 0 && want !== side) {
-      settle(c); side = 0;
-      if (want !== 0) { open(c); side = want; }   // direct reversal pays both sides' fees
+      settle(c); rec(ts, "CLOSE", c, side); side = 0;
+      if (want !== 0) { open(c); side = want; rec(ts, "OPEN", c, want); }   // direct reversal pays both sides' fees
     }
     if (eq <= 0.001 && side === 0) break;
   }
@@ -1455,6 +1494,53 @@ const Galaxy = {
   },
 };
 
+function A_short(g) {
+  if (g.block === 'COMBO') return A_subDesc(g.subs[0]) + '+' + A_subDesc(g.subs[1]);
+  if (g.block === 'REGIME') return 'Regime ADX>' + g.p[0];
+  return A_subDesc({ block: g.block, p: g.p });
+}
+function renderArenaFeed(scored) {
+  const el = $("arenaFeed");
+  if (!el || !state.arena) return;
+  const rows = [];
+  for (const x of scored) {
+    const log = [];
+    A_score(x.g, x.g.birth, state.arena.now, log);
+    for (const t of log) rows.push(t);
+  }
+  rows.sort((a, b) => b.ts - a.ts);
+  const ACT = {
+    OPEN:  { cls: "fa-open",  txt: s => s === 1 ? "LONG" : "SHORT" },
+    CLOSE: { cls: "fa-close", txt: () => "CLOSE" },
+    STOP:  { cls: "fa-stop",  txt: () => "STOP" },
+    LIQ:   { cls: "fa-liq",   txt: () => "LIQ" },
+  };
+  const fmtT = ts => { const d = new Date(ts);
+    return String(d.getUTCMonth()+1).padStart(2,"0") + "-" + String(d.getUTCDate()).padStart(2,"0")
+      + " " + String(d.getUTCHours()).padStart(2,"0") + ":" + String(d.getUTCMinutes()).padStart(2,"0"); };
+  el.innerHTML = rows.slice(0, 60).map(t => {
+    const a = ACT[t.act];
+    const money = t.act === "OPEN" ? "$" + t.usd.toFixed(0)
+      : (t.usd >= 0 ? "+$" : "-$") + Math.abs(t.usd).toFixed(0);
+    const mcls = t.act === "OPEN" ? "" : (t.usd >= 0 ? "up" : "down");
+    const why = t.act === "STOP" ? `stop ${(t.g.sl*100).toFixed(0)}% hit`
+      : t.act === "LIQ" ? `margin gone at ${t.g.lev}x`
+      : A_short(t.g);
+    return `<div class="frow">
+      <span class="ft">${fmtT(t.ts)}</span>
+      <span class="fg">${t.g.id}</span>
+      <span class="fa ${a.cls}">${a.txt(t.side)}</span>
+      <span class="fm ${mcls}">${money}</span>
+      <span class="fw">${why}</span>
+      <span class="fp">@${t.px.toLocaleString("en-US",{maximumFractionDigits:0})}</span>
+      <span class="fl">${t.g.lev}x ${t.g.tf}</span>
+    </div>`;
+  }).join("") || '<div style="color:var(--muted);padding:16px;text-align:center">No activity yet</div>';
+  const t24 = Date.now() - 86400e3;
+  const n24 = rows.filter(r => r.ts >= t24).length;
+  const tag = $("feedTag");
+  if (tag) tag.textContent = `${rows.length} events total · ${n24} in the last 24h · newest first`;
+}
 function renderOverviewArena() {
   if (!state.arena) return;
   const { pool, gen, deaths, now } = state.arena;
@@ -1465,6 +1551,7 @@ function renderOverviewArena() {
   $("ovAGen").textContent = `Gen ${gen} · ${liveN}/20 in position`;
   $("ovATop").textContent = scored[0] ? `Leader ${scored[0].g.id} ${fmtP(scored[0].s.ret)}` : "–";
   Galaxy.setData(scored);
+  renderArenaFeed(scored);
   $("ovTop5").innerHTML = scored.slice(0, 5).map((x, i) => {
     const eq = A_DEP * (1 + x.s.ret / 100);
     return `<tr><td>${i+1}</td><td><b>${x.g.id}</b> ${A_desc(x.g)}</td><td>${x.g.tf}</td><td class="${eq >= A_DEP ? "up" : "down"}"><b>$${eq.toFixed(0)}</b> (${fmtP(x.s.ret)})</td><td><div class="hbar"><i style="width:${Math.min(100, Math.abs(x.s.ret) / 2).toFixed(0)}%${x.s.ret < 0 ? ";background:linear-gradient(90deg,#e0806e,#d3c95e)" : ""}"></i></div></td><td>${x.s.trades}</td><td>${x.s.side === 1 ? '<span class="pill tealp">LONG</span>' : x.s.side === -1 ? '<span class="pill loss">SHORT</span>' : '<span class="pill refp">FLAT</span>'}</td></tr>`;
