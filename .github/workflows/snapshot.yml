@@ -6,7 +6,7 @@ name: hourly snapshot
 
 on:
   schedule:
-    - cron: '5 * * * *'          # every hour at :05 UTC (GitHub may delay a few minutes)
+    - cron: '23 * * * *'         # every hour at :23 UTC (off the top of the hour: GitHub delays or drops :00/:05 schedules under load)
   workflow_dispatch:
 
 permissions:
