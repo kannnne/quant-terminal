@@ -199,6 +199,15 @@
     <div style="font-size:10.5px;color:var(--muted);margin-top:10px" id="sgridNote">–</div>
   </div>
 
+  <div class="card g-green">
+    <h2>Attention vs smart money · what X is talking about vs what the Hyperliquid top 100 are actually buying <span class="tag" id="attnTag">–</span>
+      <span class="legend"><span><i style="background:var(--green)"></i>hot + smart money buying</span><span><i style="background:var(--red)"></i>hot + smart money selling</span><span><i style="background:var(--gold)"></i>quiet accumulation</span></span></h2>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>#</th><th style="text-align:left">Token</th><th style="text-align:left">Attention (where it is trending)</th><th>24h</th><th>Leaders 4h</th><th>Leaders 24h</th><th>Net flow 24h</th><th>First touch</th><th style="text-align:left">Read</th></tr></thead>
+      <tbody id="attn"></tbody></table></div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:8px" id="attnNote">–</div>
+  </div>
+
   <div class="card g-gold">
     <h2>Signal Arena · Top 10 <span class="tag" id="arenaTag">–</span>
       <span class="legend"><span><i style="background:var(--green)"></i>Profit</span><span><i style="background:var(--red)"></i>Loss</span><span><i style="background:var(--teal)"></i>In position</span></span></h2>
@@ -306,7 +315,13 @@ async function loadLive(merged) {
     tryGet('cg', () => getJSON('https://api.coingecko.com/api/v3/global')),
     tryGet('trend', () => getJSON('https://api.coingecko.com/api/v3/search/trending')),
     tryGet('stable', () => getJSON('https://stablecoins.llama.fi/stablecoins?includePrices=false')),
+    tryGet('dexBoost', () => getJSON('https://api.dexscreener.com/token-boosts/top/v1')),
+    tryGet('gtTrend', () => getJSON('https://api.geckoterminal.com/api/v2/networks/trending_pools?include=base_token&page=1')),
   ]);
+  // resolve DEXScreener boosted tokens to symbols (batched, ≤30 per call)
+  if (live.dexBoost && Array.isArray(live.dexBoost)) { try { const byChain = {}; for (const b of live.dexBoost.slice(0, 40)) (byChain[b.chainId] = byChain[b.chainId] || []).push(b.tokenAddress);
+    const out = []; for (const [chain, addrs] of Object.entries(byChain)) { const r = await getJSON(`https://api.dexscreener.com/tokens/v1/${chain}/${addrs.slice(0, 30).join(',')}`); if (Array.isArray(r)) for (const pr of r) out.push({ chain, sym: pr.baseToken && pr.baseToken.symbol, name: pr.baseToken && pr.baseToken.name, chg: pr.priceChange && +pr.priceChange.h24, vol: pr.volume && +pr.volume.h24, mcap: pr.marketCap || pr.fdv, url: pr.url }); }
+    live.dexTokens = out; } catch (e) { live.dexTokens = null; } }
   state.live = live;
   state.lastFetch = Date.now();
 }
@@ -575,6 +590,30 @@ function renderBoard() {
   $('cSent').innerHTML = `<span class="${sent >= 70 ? 'down' : sent <= 30 ? 'up' : ''}">${sent.toFixed(0)}</span> <small style="font-size:11px;color:var(--muted)">/100</small>`;
   $('cSentD').textContent = fgLbl;
 }
+/* ---------- attention vs smart money: social trending (CoinGecko / DEXScreener / GeckoTerminal) crossed with the Copy Desk leader-flow board ---------- */
+const normSym = s => String(s || '').toUpperCase().replace(/^\$/, '').replace(/^K(?=[A-Z]{3,})/, '');   // Hyperliquid kPEPE -> PEPE
+function renderAttention() {
+  const lv = state.live; const att = new Map();   // sym -> {sym, src: Set, chg, name, rank}
+  const add = (sym, src, extra) => { const k = normSym(sym); if (!k || k.length > 12) return; const a = att.get(k) || { sym: k, src: new Set(), chg: null, name: '', rank: null, mcap: null }; a.src.add(src); Object.assign(a, Object.fromEntries(Object.entries(extra || {}).filter(([, v]) => v != null && v === v))); att.set(k, a); };
+  if (lv.trend && lv.trend.coins) lv.trend.coins.forEach((c, i) => add(c.item.symbol, `CoinGecko #${i + 1}`, { name: c.item.name, rank: c.item.market_cap_rank, chg: c.item.data && c.item.data.price_change_percentage_24h && c.item.data.price_change_percentage_24h.usd }));
+  if (lv.dexTokens) lv.dexTokens.forEach(t => add(t.sym, `DEX boost · ${t.chain}`, { name: t.name, chg: t.chg, mcap: t.mcap }));
+  if (lv.gtTrend && lv.gtTrend.data) { const inc = new Map((lv.gtTrend.included || []).map(x => [x.id, x])); lv.gtTrend.data.forEach((p, i) => { const rel = p.relationships && p.relationships.base_token && p.relationships.base_token.data; const tok = rel && inc.get(rel.id); const sym = tok && tok.attributes && tok.attributes.symbol; const chg = p.attributes && p.attributes.price_change_percentage && +p.attributes.price_change_percentage.h24; if (sym) add(sym, `GeckoTerminal pool #${i + 1}`, { chg }); }); }
+  let lf = null; try { lf = JSON.parse(localStorage.getItem('qt_leaderflow') || 'null'); } catch (e) {}
+  const flow = new Map(); if (lf && lf.rows) for (const r of lf.rows) flow.set(normSym(r.coin), r);
+  const stale = !lf || Date.now() - lf.t > 2 * H1;
+  const rows = [];
+  for (const a of att.values()) { const f = flow.get(a.sym); rows.push({ ...a, f, kind: f ? (f.o24 >= 2 && f.net > 0 ? 'buy' : f.o24 >= 2 && f.net < 0 ? 'sell' : 'touch') : 'none' }); }
+  // quiet accumulation: leaders piling in (≥3 in 4h or ≥5 in 24h with net buying) but nobody talking
+  for (const f of flow.values()) if (!att.has(normSym(f.coin)) && ((f.o4 >= 3 || f.o24 >= 5) && f.net > 0)) rows.push({ sym: normSym(f.coin), src: new Set(), chg: f.px24, f, kind: 'quiet' });
+  const order = { buy: 0, sell: 1, quiet: 2, touch: 3, none: 4 };
+  rows.sort((p, q) => order[p.kind] - order[q.kind] || (q.f ? q.f.o24 : 0) - (p.f ? p.f.o24 : 0) || q.src.size - p.src.size);
+  const READ = { buy: ['up', 'Hot AND the top 100 are net buying — the only combination worth a closer look'], sell: ['down', 'Hot but the top 100 are net selling into it — crowd buying, smart money exiting'], quiet: ['', '<span style="color:var(--gold)">Quiet accumulation</span> — leaders piling in, no social attention yet'], touch: ['', 'Hot; a leader or two touched it, no consensus'], none: ['', 'Hot on socials, not one of the top 100 has touched it on Hyperliquid — attention only'] };
+  $('attn').innerHTML = rows.slice(0, 30).map((r, i) => { const [cls, txt] = READ[r.kind]; const f = r.f;
+    return `<tr><td>${i + 1}</td><td style="text-align:left"><b>${r.sym}</b>${r.name ? ` <span style="color:var(--muted)">${r.name}</span>` : ''}${r.rank ? ` <span class="pill refp" style="font-size:9px;padding:1px 6px">mcap #${r.rank}</span>` : ''}</td><td style="text-align:left;color:var(--muted);white-space:normal;max-width:260px">${[...r.src].join(' · ') || '–'}</td><td class="${r.chg == null ? '' : r.chg >= 0 ? 'up' : 'down'}">${r.chg == null ? '–' : (r.chg >= 0 ? '+' : '') + (+r.chg).toFixed(1) + '%'}</td><td>${f ? `<b>${f.o4}</b>` : '–'}</td><td>${f ? f.o24 : '–'}</td><td class="${f ? (f.net >= 0 ? 'up' : 'down') : ''}">${f ? (f.net >= 0 ? '+$' : '-$') + (Math.abs(f.net) >= 1e6 ? (Math.abs(f.net) / 1e6).toFixed(2) + 'M' : (Math.abs(f.net) / 1e3).toFixed(0) + 'k') : '–'}</td><td>${f && f.first24 ? `<span class="pill goldp">${f.first24}</span>` : '–'}</td><td style="text-align:left;white-space:normal;min-width:220px" class="${cls}">${txt}</td></tr>`; }).join('') || '<tr><td colspan="9" style="color:var(--muted);text-align:center;padding:14px">No trending data loaded.</td></tr>';
+  const nHot = att.size, nBuy = rows.filter(r => r.kind === 'buy').length, nSell = rows.filter(r => r.kind === 'sell').length, nQuiet = rows.filter(r => r.kind === 'quiet').length;
+  $('attnTag').textContent = `${nHot} tokens trending · ${nBuy} with smart-money buying · ${nSell} being sold into · ${nQuiet} quiet accumulation${stale ? ' · leader flow ' + (lf ? 'is ' + Math.round((Date.now() - lf.t) / 60e3) + ' min old' : 'missing') : ''}`;
+  $('attnNote').innerHTML = `Attention = CoinGecko trending search, DEXScreener boosted tokens (resolved to symbols) and GeckoTerminal trending pools, live. Smart money = the Copy Desk's leader-flow board (distinct Hyperliquid top-100 addresses opening a market in 4h / 24h, net notional bought minus sold over 24h, first-touch count)${lf ? `, last refreshed ${new Date(lf.t).toISOString().replace('T', ' ').slice(0, 16)} UTC` : ''}. ${stale ? '<b>Open the Copy Desk tab once so the leader-flow board refreshes</b> — this page only reads what that page wrote. ' : ''}A token can only be matched when it also trades as a Hyperliquid perp; memecoins that exist only on-chain show as "attention only" by construction. This is a discovery filter, not a signal: a 100x candidate is by definition a token most holders lose everything on — the only thing this board can do is separate crowd-only hype from names where the people with the best 30-day records are actually positioned.`;
+}
 function renderArena() {
   const a = state.arena, scored = a.pool.map(g => ({ g, s: S_score(g, g.birth, a.now) })).sort((x, y) => y.s.ret - x.s.ret || x.g.id.localeCompare(y.g.id));
   state.scored = scored;
@@ -614,9 +653,9 @@ function renderFeed(scored) {
 }
 function renderAll() {
   if ($('app').classList.contains('loading')) { $('app').classList.remove('loading'); $('app').innerHTML = $('tpl').innerHTML; }
-  renderBoard();
+  renderBoard(); try { renderAttention(); } catch (e) { const el = $('attnNote'); if (el) el.textContent = 'Attention board failed: ' + e.message; }
   renderArena();
-  $('foot').innerHTML = `Signal Desk v1.0 · seed ${SIG_SEED} · ${S_KEYS.length} signal species + signal∧trend combos · ${S_SEATS} seats, ${S_BENCH}-bot bench · weekly evolution on Monday 00:00 UTC · paper only, no keys, no real funds.<br>Snapshots loaded: ${state.snapFiles.join(', ') || 'none'} · Binance keeps derivatives series for 30 days only, so history is preserved in weekly snapshot files inside the repo.`;
+  $('foot').innerHTML = `Signal Desk v1.1 · seed ${SIG_SEED} · ${S_KEYS.length} signal species + signal∧trend combos · ${S_SEATS} seats, ${S_BENCH}-bot bench · weekly evolution on Monday 00:00 UTC · paper only, no keys, no real funds.<br>Snapshots loaded: ${state.snapFiles.join(', ') || 'none'} · Binance keeps derivatives series for 30 days only, so history is preserved in weekly snapshot files inside the repo.`;
 }
 /* ---------- snapshot export (weekly: copies a compact JSON of the merged series to the clipboard) ---------- */
 window.SIG = { state, exportSnapshot() { const s = state.series; const c = { symbol: 'BTCUSDT', taken: Date.now(), period: '1h', oi: s.oi, ls: s.ls, top: s.top, tk: s.tk, funding: s.funding, fng: s.fng }; return JSON.stringify(c); }, replay: S_replay, score: S_score, pos: S_pos, blocks: S_BLOCKS };
@@ -717,11 +756,11 @@ setInterval(boot, 10 * 60e3);
   const VALUE_SEL = '.chip .v, .mini .v, .stat .v';
   const q = (roots, sel) => { const out = []; for (const r of roots) { if (r.matches(sel)) out.push(r); out.push(...r.querySelectorAll(sel)); } return out; };
   function entrance(roots) {
-    q(roots, '.card, .chip').forEach(el => { if (el.__mi) return; el.__mi = 1; el.style.setProperty('--i', [...el.parentNode.children].indexOf(el)); });
-    q(roots, '.sp, .sig, .gauge').forEach(el => { if (el.__mi) return; el.__mi = 1; el.style.setProperty('--i', Math.min(14, [...el.parentNode.children].indexOf(el))); });
+    q(roots, '.card, .chip').forEach(el => { if (el.__mi) return; el.__mi = 1; if (el.parentNode) el.style.setProperty('--i', [...el.parentNode.children].indexOf(el)); });
+    q(roots, '.sp, .sig, .gauge').forEach(el => { if (el.__mi) return; el.__mi = 1; if (el.parentNode) el.style.setProperty('--i', Math.min(14, [...el.parentNode.children].indexOf(el))); });
     q(roots, 'tbody').forEach(tb => { if (tb.__seen || !tb.children.length) return; tb.__seen = 1; [...tb.children].slice(0, 40).forEach((tr, i) => { tr.classList.add('m-row'); tr.style.setProperty('--r', i); }); });
     // feed rows: flash only rows never seen in this container (batched so a whole re-render staggers correctly)
-    const byC = new Map(); for (const r of q(roots, '.frow')) { const c = r.parentNode; if (!byC.has(c)) byC.set(c, new Set()); byC.get(c).add(r); }
+    const byC = new Map(); for (const r of q(roots, '.frow')) { const c = r.parentNode; if (!c) continue; if (!byC.has(c)) byC.set(c, new Set()); byC.get(c).add(r); }
     for (const [c, rs] of byC) { const seen = c.__seen || (c.__seen = new Set()); const first = !seen.size; let n = 0; for (const r of rs) { const k = r.textContent; if (seen.has(k)) { r.classList.remove('m-new'); continue; } seen.add(k); r.classList.add('m-new'); r.style.setProperty('--r', Math.min(n++, first ? 24 : 6)); } if (seen.size > 2000) c.__seen = new Set([...seen].slice(-1000)); }
     q(roots, VALUE_SEL).forEach(value);
   }
