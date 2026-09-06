@@ -432,16 +432,36 @@ const LEV_RISK = { 1: "No leverage · Most stable", 2: "Conservative · Zero liq
 let state = { data: [], daily: null, ethDaily: null, price: null, priceEth: null, lev: CFG.lev, timer: null };
 
 /* ================= Data ================= */
-async function fetchKlines(startMs) {
-  let rows = [], t = startMs;
-  for (let i = 0; i < 12; i++) {
-    const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&startTime=${t}&limit=1000`).then(x => x.json());
-    if (!Array.isArray(r) || r.length === 0) break;
-    for (const k of r) rows.push([k[0], +k[1], +k[2], +k[3], +k[4]]);
-    if (r.length < 1000) break;
-    t = r[r.length - 1][6] + 1;
-  }
+/* ---- bar cache (IndexedDB) + parallel page fetch. 2026-09-06: the page used to pull ~160 Binance pages one after another on
+   every open (about a minute on a normal connection). Bars are immutable once closed, so they are cached per timeframe on this
+   machine and only the tail is fetched afterwards; a cold load fetches pages 8 at a time. Bar content is identical either way. */
+const T_IDB = { db: null,
+  open() { if (this.db) return Promise.resolve(this.db); return new Promise((res, rej) => { if (!window.indexedDB) return rej(new Error('no idb')); const q = indexedDB.open('terminalBars', 1); q.onupgradeneeded = () => q.result.createObjectStore('bars'); q.onsuccess = () => { this.db = q.result; res(this.db); }; q.onerror = () => rej(q.error); }); },
+  // rows are stored as one flat Float64Array (ts,o,h,l,c per bar): ~20x faster to read back than 50,000 nested arrays
+  async get(k) { try { const db = await this.open(); const v = await new Promise((res, rej) => { const r = db.transaction('bars').objectStore('bars').get(k); r.onsuccess = () => res(r.result || null); r.onerror = () => rej(r.error); });
+    if (!v || !v.buf) return null; const a = v.buf, out = new Array(a.length / 5); for (let i = 0, j = 0; i < out.length; i++, j += 5) out[i] = [a[j], a[j + 1], a[j + 2], a[j + 3], a[j + 4]]; return out; } catch (e) { return null; } },
+  async put(k, rows) { try { const db = await this.open(); const a = new Float64Array(rows.length * 5); for (let i = 0, j = 0; i < rows.length; i++, j += 5) { a[j] = rows[i][0]; a[j + 1] = rows[i][1]; a[j + 2] = rows[i][2]; a[j + 3] = rows[i][3]; a[j + 4] = rows[i][4]; }
+    await new Promise((res, rej) => { const tx = db.transaction('bars', 'readwrite'); tx.objectStore('bars').put({ buf: a }, k); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); } catch (e) {} } };
+const T_MS = { '1m': 60e3, '5m': 300e3, '15m': 900e3, '30m': 1800e3, '1h': 3600e3, '1d': 86400e3 };
+async function fetchPages(sym, tf, from, to, onPage) {
+  const ms = T_MS[tf], starts = []; for (let t = from; t < to; t += 1000 * ms) starts.push(t);
+  const pages = new Array(starts.length); let next = 0, done = 0;
+  const worker = async () => { while (next < starts.length) { const i = next++; const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${tf}&startTime=${Math.floor(starts[i])}&limit=1000`).then(x => x.json());
+    if (!Array.isArray(r)) throw new Error(r && r.msg ? r.msg : 'Binance klines error'); pages[i] = r; done++; if (onPage) onPage(done, starts.length); } };
+  await Promise.all(Array.from({ length: Math.min(8, starts.length) }, worker));
+  const seen = new Set(), rows = [];
+  for (const p of pages) for (const k of p) { if (seen.has(k[0])) continue; seen.add(k[0]); rows.push([k[0], +k[1], +k[2], +k[3], +k[4]]); }
+  rows.sort((a, b) => a[0] - b[0]);
   return rows;
+}
+async function fetchKlines(startMs) {
+  const cached = await T_IDB.get('main-1h') || [];
+  const from = cached.length ? cached[cached.length - 1][0] + T_MS['1h'] : startMs;
+  const fresh = await fetchPages('BTCUSDT', '1h', from, Date.now() + 1);
+  const rows = cached.concat(fresh);
+  if (rows.length && rows[rows.length - 1][0] + T_MS['1h'] > Date.now()) rows.pop();   // drop the still-open bar (refreshTail re-adds it live)
+  T_IDB.put('main-1h', rows);
+  return rows.slice();
 }
 async function refreshTail() {
   const d = state.data;
@@ -1013,36 +1033,29 @@ function A_replay() {
 async function loadArenaLite() {
   const el = $("ovALoad");
   const bars = state.arenaBars || {};
+  const replayNow = () => { A_posCache.clear(); A_invCache.clear(); state.arena = A_replay(); renderOverviewArena(); };
   try {
-    for (const tf of ['5m','15m','30m','1h']) {
+    const TFS = ['5m','15m','30m','1h'];
+    if (!state.arenaBars) {                                   // first call this session: show the cached contest at once, then top up
+      let allCached = true;
+      for (const tf of TFS) { const c = await T_IDB.get('arena-' + tf); if (c && c.length) bars[tf] = c; else allCached = false; }
+      if (allCached) { state.arenaBars = bars; try { replayNow(); } catch (e) {} if (el) el.textContent += ' · updating…'; }
+    }
+    for (const tf of TFS) {
       const prev = bars[tf] || [];
-      let rows = prev;
-      let t = prev.length ? prev[prev.length-1][0] + A_TFMS[tf] : Date.now() - A_DEPTH_DAYS[tf] * 86400e3;
-      let guard = 0;
-      const totalPages = Math.ceil((Date.now() - t) / (A_TFMS[tf] * 1000)) + 1;
-      while (guard++ < 400) {
-        if (el && !prev.length) el.textContent = `Loading arena history… ${tf} ${Math.min(99, Math.round(guard / totalPages * 100))}%`;
-        const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${tf}&startTime=${Math.floor(t)}&limit=1000`).then(x => x.json());
-        if (!Array.isArray(r) || r.length === 0) break;
-        for (const k of r) rows.push([k[0], +k[1], +k[2], +k[3], +k[4]]);
-        if (r.length < 1000) break;
-        t = r[r.length-1][6] + 1;
-      }
+      const from = prev.length ? prev[prev.length-1][0] + A_TFMS[tf] : Date.now() - A_DEPTH_DAYS[tf] * 86400e3;
+      const fresh = await fetchPages('BTCUSDT', tf, from, Date.now() + 1, (d, n) => { if (el && !prev.length) el.textContent = `Loading arena history… ${tf} ${Math.min(99, Math.round(d / n * 100))}%`; });
+      const rows = prev.concat(fresh);
       if (rows.length && rows[rows.length-1][0] + A_TFMS[tf] > Date.now()) rows.pop();
       bars[tf] = rows;
+      T_IDB.put('arena-' + tf, rows);
     }
     state.arenaBars = bars;
   } catch (e) {
     if (el) el.textContent = "Arena data fetch failed (will retry in 10 min): " + e.message;
     return;
   }
-  try {
-    A_posCache.clear(); A_invCache.clear();
-    state.arena = A_replay();
-    renderOverviewArena();
-  } catch (e) {
-    if (el) el.textContent = "Arena replay error: " + e.message;
-  }
+  try { replayNow(); } catch (e) { if (el) el.textContent = "Arena replay error: " + e.message; }
 }
 /* Galaxy (three.js) removed 2026-09-06 — background is now the same starfield as Signal Desk. */
 
@@ -1668,11 +1681,11 @@ boot();
   const VALUE_SEL = '.chip .v, .mini .v, .stat .v';
   const q = (roots, sel) => { const out = []; for (const r of roots) { if (r.matches(sel)) out.push(r); out.push(...r.querySelectorAll(sel)); } return out; };
   function entrance(roots) {
-    q(roots, '.card, .chip').forEach(el => { if (el.__mi) return; el.__mi = 1; el.style.setProperty('--i', [...el.parentNode.children].indexOf(el)); });
-    q(roots, '.sp, .sig, .gauge').forEach(el => { if (el.__mi) return; el.__mi = 1; el.style.setProperty('--i', Math.min(14, [...el.parentNode.children].indexOf(el))); });
+    q(roots, '.card, .chip').forEach(el => { if (el.__mi) return; el.__mi = 1; if (el.parentNode) el.style.setProperty('--i', [...el.parentNode.children].indexOf(el)); });
+    q(roots, '.sp, .sig, .gauge').forEach(el => { if (el.__mi) return; el.__mi = 1; if (el.parentNode) el.style.setProperty('--i', Math.min(14, [...el.parentNode.children].indexOf(el))); });
     q(roots, 'tbody').forEach(tb => { if (tb.__seen || !tb.children.length) return; tb.__seen = 1; [...tb.children].slice(0, 40).forEach((tr, i) => { tr.classList.add('m-row'); tr.style.setProperty('--r', i); }); });
     // feed rows: flash only rows never seen in this container (batched so a whole re-render staggers correctly)
-    const byC = new Map(); for (const r of q(roots, '.frow')) { const c = r.parentNode; if (!byC.has(c)) byC.set(c, new Set()); byC.get(c).add(r); }
+    const byC = new Map(); for (const r of q(roots, '.frow')) { const c = r.parentNode; if (!c) continue; if (!byC.has(c)) byC.set(c, new Set()); byC.get(c).add(r); }
     for (const [c, rs] of byC) { const seen = c.__seen || (c.__seen = new Set()); const first = !seen.size; let n = 0; for (const r of rs) { const k = r.textContent; if (seen.has(k)) { r.classList.remove('m-new'); continue; } seen.add(k); r.classList.add('m-new'); r.style.setProperty('--r', Math.min(n++, first ? 24 : 6)); } if (seen.size > 2000) c.__seen = new Set([...seen].slice(-1000)); }
     q(roots, VALUE_SEL).forEach(value);
   }
