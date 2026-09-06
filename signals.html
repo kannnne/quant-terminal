@@ -284,27 +284,46 @@ async function loadLive(merged) {
       if (r.length < 500) break;
     }
   };
-  await pull('openInterestHist', merged.oi, x => [x.timestamp, Math.round(+x.sumOpenInterest), Math.round(+x.sumOpenInterestValue / 1e6)]);
-  await pull('globalLongShortAccountRatio', merged.ls, x => [x.timestamp, +x.longShortRatio]);
-  await pull('topLongShortPositionRatio', merged.top, x => [x.timestamp, +x.longShortRatio]);
-  await pull('takerlongshortRatio', merged.tk, x => [x.timestamp, +x.buySellRatio]);
-  const fr = await getJSON(`https://fapi.binance.com/fapi/v1/fundingRate?symbol=BTCUSDT&limit=1000&startTime=${PRICE_FROM}`);
-  for (const x of fr) merged.funding.set(x.fundingTime, [x.fundingTime, +x.fundingRate]);
+  /* v1.2: Binance is geo-blocked from some networks (e.g. US-hosted runners that take the hourly snapshot). If it cannot be
+     reached, the derivatives series fall back to the weekly snapshot files (stale but real) and the price to Hyperliquid's
+     BTC 1h candles; the page then shows a warning banner so nobody mistakes a stale read for a live one. */
+  let binanceErr = null;
+  try {
+    await pull('openInterestHist', merged.oi, x => [x.timestamp, Math.round(+x.sumOpenInterest), Math.round(+x.sumOpenInterestValue / 1e6)]);
+    await pull('globalLongShortAccountRatio', merged.ls, x => [x.timestamp, +x.longShortRatio]);
+    await pull('topLongShortPositionRatio', merged.top, x => [x.timestamp, +x.longShortRatio]);
+    await pull('takerlongshortRatio', merged.tk, x => [x.timestamp, +x.buySellRatio]);
+    const fr = await getJSON(`https://fapi.binance.com/fapi/v1/fundingRate?symbol=BTCUSDT&limit=1000&startTime=${PRICE_FROM}`);
+    for (const x of fr) merged.funding.set(x.fundingTime, [x.fundingTime, +x.fundingRate]);
+  } catch (e) { binanceErr = e.message || String(e); if (!merged.oi.size || !merged.funding.size) throw new Error('Binance unreachable (' + binanceErr + ') and no snapshot history'); }
   try { const f = await getJSON('https://api.alternative.me/fng/?limit=60'); for (const x of f.data) merged.fng.set(+x.timestamp * 1000, [+x.timestamp * 1000, +x.value]); } catch (e) {}
   const series = {};
   for (const k of Object.keys(merged)) series[k] = [...merged[k].values()].sort((a, b) => a[0] - b[0]);
   state.series = series;
-  // price
-  let rows = [], t = PRICE_FROM;
-  for (let i = 0; i < 6; i++) {
-    const r = await getJSON(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&startTime=${t}&limit=1000`);
-    if (!r.length) break;
-    for (const k of r) rows.push([k[0], +k[1], +k[2], +k[3], +k[4]]);
-    if (r.length < 1000) break;
-    t = r[r.length - 1][6] + 1;
+  // price: Binance 1h, else Hyperliquid 1h (same candle grid, close-to-close differences are basis points)
+  let rows = [], t = PRICE_FROM, priceSrc = 'Binance';
+  try {
+    for (let i = 0; i < 6; i++) {
+      const r = await getJSON(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&startTime=${t}&limit=1000`);
+      if (!r.length) break;
+      for (const k of r) rows.push([k[0], +k[1], +k[2], +k[3], +k[4]]);
+      if (r.length < 1000) break;
+      t = r[r.length - 1][6] + 1;
+    }
+  } catch (e) {
+    rows = []; t = PRICE_FROM; priceSrc = 'Hyperliquid';
+    for (let i = 0; i < 4; i++) {
+      const r = await fetch('https://api.hyperliquid.xyz/info', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'candleSnapshot', req: { coin: 'BTC', interval: '1h', startTime: t, endTime: Date.now() } }) }).then(x => x.json());
+      if (!Array.isArray(r) || !r.length) break;
+      for (const k of r) if (!rows.length || k.t > rows[rows.length - 1][0]) rows.push([k.t, +k.o, +k.h, +k.l, +k.c]);
+      if (r.length < 5000) break;
+      t = r[r.length - 1].t + H1;
+    }
+    if (!rows.length) throw new Error('no price history (Binance: ' + e.message + '; Hyperliquid empty)');
   }
   if (rows.length && rows[rows.length - 1][0] + H1 > Date.now()) rows.pop();   // drop the still-forming candle
   state.bars = rows;
+  state.degraded = binanceErr ? { binanceErr, priceSrc, derivEnd: Math.max(...['oi', 'ls', 'top', 'tk'].map(k => series[k].length ? series[k][series[k].length - 1][0] : 0)) } : null;
   // live-only extras (no history, report cards only)
   const live = {};
   const tryGet = async (k, fn) => { try { live[k] = await fn(); } catch (e) { live[k] = null; } };
@@ -655,7 +674,7 @@ function renderAll() {
   if ($('app').classList.contains('loading')) { $('app').classList.remove('loading'); $('app').innerHTML = $('tpl').innerHTML; }
   renderBoard(); try { renderAttention(); } catch (e) { const el = $('attnNote'); if (el) el.textContent = 'Attention board failed: ' + e.message; }
   renderArena();
-  $('foot').innerHTML = `Signal Desk v1.1 · seed ${SIG_SEED} · ${S_KEYS.length} signal species + signal∧trend combos · ${S_SEATS} seats, ${S_BENCH}-bot bench · weekly evolution on Monday 00:00 UTC · paper only, no keys, no real funds.<br>Snapshots loaded: ${state.snapFiles.join(', ') || 'none'} · Binance keeps derivatives series for 30 days only, so history is preserved in weekly snapshot files inside the repo.`;
+  $('foot').innerHTML = `Signal Desk v1.2 · seed ${SIG_SEED} · ${S_KEYS.length} signal species + signal∧trend combos · ${S_SEATS} seats, ${S_BENCH}-bot bench · weekly evolution on Monday 00:00 UTC · paper only, no keys, no real funds.<br>Snapshots loaded: ${state.snapFiles.join(', ') || 'none'} · Binance keeps derivatives series for 30 days only, so history is preserved in weekly snapshot files inside the repo.`;
 }
 /* ---------- snapshot export (weekly: copies a compact JSON of the merged series to the clipboard) ---------- */
 window.SIG = { state, exportSnapshot() { const s = state.series; const c = { symbol: 'BTCUSDT', taken: Date.now(), period: '1h', oi: s.oi, ls: s.ls, top: s.top, tk: s.tk, funding: s.funding, fng: s.fng }; return JSON.stringify(c); }, replay: S_replay, score: S_score, pos: S_pos, blocks: S_BLOCKS };
@@ -671,7 +690,10 @@ async function boot() {
     txt.textContent = 'Replaying 50-bot arena…';
     state.arena = S_replay();
     renderAll();
-    dot.className = 'dot ok'; txt.textContent = 'Live · ' + new Date().toISOString().slice(11, 19) + ' UTC';
+    const b = $('errBanner');
+    if (state.degraded) { b.className = 'banner warn'; b.textContent = `Binance unreachable from this network (${state.degraded.binanceErr}). Derivatives series end at ${new Date(state.degraded.derivEnd).toISOString().replace('T', ' ').slice(0, 16)} UTC (last weekly snapshot); price from ${state.degraded.priceSrc}. Cards, gauges and the signal bots are computed on that stale data — treat this view as degraded.`; }
+    else { b.className = 'banner'; b.textContent = ''; }
+    dot.className = 'dot ok'; txt.textContent = (state.degraded ? 'Degraded · ' : 'Live · ') + new Date().toISOString().slice(11, 19) + ' UTC';
   } catch (e) {
     dot.className = 'dot err'; txt.textContent = 'Error';
     const b = $('errBanner'); b.className = 'banner err'; b.textContent = 'Load failed: ' + e.message + ' — will retry in 10 minutes.';
