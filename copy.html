@@ -601,5 +601,96 @@ setInterval(() => { if (!state.booting) refresh('timer'); }, 60e3);          // 
 setInterval(() => { if (!state.booting && (!WS.sock || Date.now() - WS.lastMsg > 30 * 60e3)) boot(); }, 30 * 60e3);   // REST resync fallback if the socket is dead
 
 </script>
+<!-- ===== motion layer (shared by all pages) ===== -->
+<style id="motionCss">
+  /* ambient: glows drift, stars breathe */
+  #universe::before, #universe::after { content: ''; position: absolute; width: 70vmax; height: 70vmax; border-radius: 50%; pointer-events: none; will-change: transform; }
+  #universe::before { left: -22vmax; top: -26vmax; background: radial-gradient(circle, rgba(134,201,138,.12), rgba(134,201,138,.04) 38%, transparent 62%); animation: m-driftA 42s ease-in-out infinite alternate; }
+  #universe::after { right: -26vmax; bottom: -28vmax; background: radial-gradient(circle, rgba(138,214,176,.10), rgba(120,150,255,.035) 40%, transparent 62%); animation: m-driftB 55s ease-in-out infinite alternate; }
+  @keyframes m-driftA { to { transform: translate(14vmax, 10vmax) scale(1.18); } }
+  @keyframes m-driftB { to { transform: translate(-12vmax, -11vmax) scale(1.12); } }
+  #stars { animation: m-twinkle 6.5s ease-in-out infinite alternate; }
+  @keyframes m-twinkle { from { opacity: .62; } to { opacity: .98; } }
+  /* live dot pulse */
+  .dot.ok { animation: m-pulse 2.2s ease-in-out infinite; }
+  @keyframes m-pulse { 0%, 100% { box-shadow: 0 0 6px currentColor; } 50% { box-shadow: 0 0 14px currentColor, 0 0 26px currentColor; } }
+  /* entrance */
+  .card, .chip { animation: m-rise .75s cubic-bezier(.2,.75,.2,1) both; animation-delay: calc(var(--i, 0) * 70ms); }
+  @keyframes m-rise { from { opacity: 0; transform: translateY(16px) scale(.985); } to { opacity: 1; transform: none; } }
+  tbody tr.m-row { animation: m-rowIn .55s cubic-bezier(.2,.75,.2,1) both; animation-delay: calc(var(--r, 0) * 28ms); }
+  @keyframes m-rowIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
+  .sp, .sig, .gauge { animation: m-rise .6s cubic-bezier(.2,.75,.2,1) both; animation-delay: calc(var(--i, 0) * 45ms); }
+  /* bars grow from zero on every render */
+  .hbar i, .sp .bar i, .sig .pb i, .bar i { transform-origin: left center; animation: m-grow .9s cubic-bezier(.2,.75,.2,1) both; }
+  .sig .pb i { animation-name: m-fade; }
+  @keyframes m-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  @keyframes m-fade { from { opacity: 0; } to { opacity: 1; } }
+  /* feed: new rows slide in and flash */
+  .frow.m-new { animation: m-feedIn .7s cubic-bezier(.2,.75,.2,1) both, m-flash 1.8s ease-out both; animation-delay: calc(var(--r, 0) * 40ms); }
+  @keyframes m-feedIn { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: none; } }
+  @keyframes m-flash { 0% { background: rgba(134,201,138,.22); box-shadow: inset 3px 0 0 rgba(134,201,138,.9); } 100% { background: transparent; box-shadow: inset 3px 0 0 transparent; } }
+  /* value ticks */
+  .m-up { animation: m-tickUp 1.1s ease-out both; } .m-down { animation: m-tickDown 1.1s ease-out both; }
+  @keyframes m-tickUp { 0% { color: #9ff0a5; text-shadow: 0 0 14px rgba(134,201,138,.85); } 100% { text-shadow: none; } }
+  @keyframes m-tickDown { 0% { color: #f0a08f; text-shadow: 0 0 14px rgba(224,128,110,.85); } 100% { text-shadow: none; } }
+  /* hover */
+  .card, .chip, .sp, .sig, .gauge, .tab-btn { transition: transform .35s cubic-bezier(.2,.75,.2,1), box-shadow .35s, background .35s, border-color .35s; }
+  .card:hover { transform: translateY(-3px); box-shadow: 0 22px 48px -22px rgba(0,0,0,.75), 0 0 0 1px rgba(255,255,255,.07) inset; }
+  .chip:hover { transform: translateY(-2px) scale(1.012); }
+  .chip:hover .ring { box-shadow: 0 0 22px var(--c, rgba(255,255,255,.3)); }
+  .ring { transition: box-shadow .4s; }
+  .sp:hover, .sig:hover, .gauge:hover { transform: translateY(-2px); background: rgba(255,255,255,.055); }
+  .tab-btn:hover { transform: translateY(-1px); }
+  tbody tr { transition: background .25s; }
+  tbody tr:hover td { background: rgba(255,255,255,.04); }
+  .m-done { animation: none !important; }
+  @media (prefers-reduced-motion: reduce) {
+    #universe::before, #universe::after, #stars, .dot.ok, .card, .chip, tbody tr.m-row, .sp, .sig, .gauge, .hbar i, .sp .bar i, .sig .pb i, .bar i, .frow.m-new, .m-up, .m-down { animation: none !important; }
+    .card, .chip, .sp, .sig, .gauge, .tab-btn { transition: none; }
+  }
+</style>
+<script id="motionJs">
+/* MOTION: entrance stagger, new-feed-row flash, number tweens. Pure presentation — never touches page state. */
+(function () {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const NUM = /^([^\d\-+]*)([-+]?)(\d[\d,]*)(\.\d+)?([^\d]*)$/;
+  const parse = t => { const m = NUM.exec(t.trim()); if (!m) return null; const digits = m[3].replace(/,/g, ''); if (digits.length > 12) return null; return { pre: m[1], sign: m[2], v: +(digits + (m[4] || '')), dec: m[4] ? m[4].length - 1 : 0, grp: m[3].includes(','), suf: m[5] }; };
+  const fmt = (p, v) => { let s = Math.abs(v).toFixed(p.dec); if (p.grp) { const [a, b] = s.split('.'); s = a.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (b ? '.' + b : ''); } return p.pre + p.sign + s + p.suf; };
+  const ease = x => 1 - Math.pow(1 - x, 3);
+  function tween(el, from, to, p, dir) {
+    if (el.__mt) cancelAnimationFrame(el.__mt);
+    const t0 = performance.now(), dur = 650, target = el.textContent;
+    const step = now => { const k = Math.min(1, (now - t0) / dur); const s = k < 1 ? fmt(p, from + (to - from) * ease(k)) : target; el.__wrote = s; el.textContent = s; if (k < 1) el.__mt = requestAnimationFrame(step); else el.__mt = 0; };
+    el.__mt = requestAnimationFrame(step);
+    if (dir) { el.classList.remove('m-up', 'm-down'); void el.offsetWidth; el.classList.add(dir > 0 ? 'm-up' : 'm-down'); }
+  }
+  function value(el) {
+    const txt = el.textContent; if (txt === el.__wrote) return; const p = parse(txt); const last = el.__last; el.__last = p ? p.v : undefined;
+    if (!p) return;
+    if (last === undefined) { if (p.v !== 0) tween(el, 0, p.v, p, 0); return; }
+    if (p.v !== last) tween(el, last, p.v, p, p.v > last ? 1 : -1);
+  }
+  const VALUE_SEL = '.chip .v, .mini .v, .stat .v';
+  const q = (roots, sel) => { const out = []; for (const r of roots) { if (r.matches(sel)) out.push(r); out.push(...r.querySelectorAll(sel)); } return out; };
+  function entrance(roots) {
+    q(roots, '.card, .chip').forEach(el => { if (el.__mi) return; el.__mi = 1; el.style.setProperty('--i', [...el.parentNode.children].indexOf(el)); });
+    q(roots, '.sp, .sig, .gauge').forEach(el => { if (el.__mi) return; el.__mi = 1; el.style.setProperty('--i', Math.min(14, [...el.parentNode.children].indexOf(el))); });
+    q(roots, 'tbody').forEach(tb => { if (tb.__seen || !tb.children.length) return; tb.__seen = 1; [...tb.children].slice(0, 40).forEach((tr, i) => { tr.classList.add('m-row'); tr.style.setProperty('--r', i); }); });
+    // feed rows: flash only rows never seen in this container (batched so a whole re-render staggers correctly)
+    const byC = new Map(); for (const r of q(roots, '.frow')) { const c = r.parentNode; if (!byC.has(c)) byC.set(c, new Set()); byC.get(c).add(r); }
+    for (const [c, rs] of byC) { const seen = c.__seen || (c.__seen = new Set()); const first = !seen.size; let n = 0; for (const r of rs) { const k = r.textContent; if (seen.has(k)) { r.classList.remove('m-new'); continue; } seen.add(k); r.classList.add('m-new'); r.style.setProperty('--r', Math.min(n++, first ? 24 : 6)); } if (seen.size > 2000) c.__seen = new Set([...seen].slice(-1000)); }
+    q(roots, VALUE_SEL).forEach(value);
+  }
+  const mo = new MutationObserver(ms => { const added = [];
+    for (const m of ms) {
+      if (m.type === 'characterData') { const el = m.target.parentElement; if (el && el.matches(VALUE_SEL)) value(el); continue; }
+      const t = m.target; if (t.nodeType === 1 && t.matches(VALUE_SEL)) value(t);
+      for (const n of m.addedNodes) if (n.nodeType === 1) added.push(n); }
+    if (added.length) entrance(added); });
+  mo.observe(document.body, { childList: true, subtree: true, characterData: true });
+  document.addEventListener('animationend', e => { if (e.animationName === 'm-rise') e.target.classList.add('m-done'); });
+  entrance([document.body]);
+})();
+</script>
 </body>
 </html>
