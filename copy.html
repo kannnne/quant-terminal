@@ -644,15 +644,13 @@ setInterval(() => { if (!state.booting && (!WS.sock || Date.now() - WS.lastMsg >
   tbody tr { transition: background .25s; }
   tbody tr:hover td { background: rgba(255,255,255,.04); }
   .m-done { animation: none !important; }
-  @media (prefers-reduced-motion: reduce) {
-    #universe::before, #universe::after, #stars, .dot.ok, .card, .chip, tbody tr.m-row, .sp, .sig, .gauge, .hbar i, .sp .bar i, .sig .pb i, .bar i, .frow.m-new, .m-up, .m-down { animation: none !important; }
-    .card, .chip, .sp, .sig, .gauge, .tab-btn { transition: none; }
-  }
+  /* OS 'reduce motion' is deliberately NOT honoured: the owner asked for motion, and macOS has it switched on by default on his machine. Append ?still to the URL to disable. */
+  html.m-still * { animation: none !important; transition: none !important; }
 </style>
 <script id="motionJs">
 /* MOTION: entrance stagger, new-feed-row flash, number tweens. Pure presentation — never touches page state. */
 (function () {
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (/[?&]still\b/.test(location.search)) { document.documentElement.classList.add('m-still'); return; }
   const NUM = /^([^\d\-+]*)([-+]?)(\d[\d,]*)(\.\d+)?([^\d]*)$/;
   const parse = t => { const m = NUM.exec(t.trim()); if (!m) return null; const digits = m[3].replace(/,/g, ''); if (digits.length > 12) return null; return { pre: m[1], sign: m[2], v: +(digits + (m[4] || '')), dec: m[4] ? m[4].length - 1 : 0, grp: m[3].includes(','), suf: m[5] }; };
   const fmt = (p, v) => { let s = Math.abs(v).toFixed(p.dec); if (p.grp) { const [a, b] = s.split('.'); s = a.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (b ? '.' + b : ''); } return p.pre + p.sign + s + p.suf; };
