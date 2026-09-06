@@ -169,7 +169,7 @@
   <div class="topbar">
     <div>
       <h1>REKT Lab · Archetype Arena</h1>
-      <div class="sub">Page 3 · REKT TRADOOOR's six archetypes and four dials ported into our engine — no squeeze, 1–10x, our fee wall — plus its top-10 desks replayed fill-by-fill on Binance prices · paper only</div>
+      <div class="sub">Page 3 · REKT TRADOOOR's six archetypes and four dials ported into our engine on REKT's own universe (every Hyperliquid perp, by allegiance tier) — no squeeze, 1–10x, our fee wall — plus its top-10 desks replayed fill-by-fill on Hyperliquid prices · paper only</div>
     </div>
     <div class="conn"><span class="dot" id="connDot"></span><span id="connTxt">Connecting…</span></div>
   </div>
@@ -180,19 +180,19 @@
     <a class="tab-btn on" href="rekt.html">REKT Lab<span class="mini">Page 3 · 100 desks</span></a>
   </div>
   <div class="banner" id="errBanner"></div>
-  <div id="app" class="loading">Loading Binance 5m history and replaying 100 desks…</div>
+  <div id="app" class="loading">Loading Hyperliquid 5m history and replaying 100 desks…</div>
 </main></div>
 
 <template id="tpl">
   <div class="chips">
-    <div class="chip" style="--c:var(--blue)"><div class="ring">₿</div><div><div class="k">BTC / USDT · Binance perp</div><div class="v" id="cPrice">–</div><div class="d" id="cPriceD">–</div></div></div>
+    <div class="chip" style="--c:var(--blue)"><div class="ring">₿</div><div><div class="k">BTC · Hyperliquid perp</div><div class="v" id="cPrice">–</div><div class="d" id="cPriceD">–</div></div></div>
     <div class="chip" style="--c:var(--gold)"><div class="ring">☠</div><div><div class="k">Species pack</div><div class="v" id="cSpecies">–</div><div class="d" id="cSpeciesD">–</div></div></div>
     <div class="chip" style="--c:var(--teal)"><div class="ring">☍</div><div><div class="k">Shadow desks</div><div class="v" id="cShadow">–</div><div class="d" id="cShadowD">–</div></div></div>
     <div class="chip" style="--c:var(--vio)"><div class="ring">⚔</div><div><div class="k">Archetype Arena</div><div class="v" id="cArena" style="font-size:13px">–</div><div class="d" id="cArenaD">–</div></div></div>
   </div>
 
   <div class="card g-red">
-    <h2>Shadow Desks · REKT dry-run top 10, replayed on Binance <span class="tag" id="shadowTag">–</span></h2>
+    <h2>Shadow Desks · REKT dry-run top 10, replayed on Hyperliquid with our money rules <span class="tag" id="shadowTag">–</span></h2>
     <div style="overflow-x:auto"><table>
       <thead><tr><th>Rank</th><th style="text-align:left">Desk</th><th style="text-align:left">Archetype</th><th>Their result</th><th>Same fills · our venue</th><th>Minus squeeze-forced fills</th><th>Fills replayed</th><th>Fees + funding</th></tr></thead>
       <tbody id="shadow"></tbody></table></div>
@@ -231,12 +231,18 @@ const WARM = 3 * DAY;
 const REKT_SEED = 20260907;
 const R_SEATS = 100, R_KILL = 10, R_BENCH = 300, R_MUT = 4;
 const R_FEE = 0.0007, R_DEP = 1000, R_RUIN = 500, R_FUND_H = 0.0000125;
-const COINS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
+const REKT_VER = '2.0';
+/* v2: the universe is Hyperliquid's own perp list — exactly what REKT trades ("Hyperliquid perps for the universe", their rules page) — frozen
+   weekly in data/hl-universe-<Monday>.json (sorted by 24h notional volume). Prices are Hyperliquid 5m candles, the same tape REKT marks on. */
+const UNI_FIRST = 'data/hl-universe-2026-09-06.json', UNI_MONDAY0 = Date.UTC(2026, 8, 7);
+const MAJORS = ['BTC', 'ETH', 'SOL'];
+const MID_N = 27, TAIL_N = 60;                        // mid caps = next 27 by volume after the majors; tail = the 60 after that
+const WL = [[0, 0], [0, 0], [8, 0], [2, 6], [0, 10]]; // allegiance tier -> [mid-cap picks, tail picks] drawn at birth, on top of the fixed majors below
+const WL_MAJ = [['BTC'], MAJORS, MAJORS, ['BTC'], []];
 const SHADOW_FILE = 'data/rekt-top10-2026-09-05.json';
-const UNIVERSE_FILE = 'data/copy-roster-2026-09-05.json';
 const ARCH = { MOMENTUM_APE: 'Momentum Ape', MEAN_REVERTER: 'Mean Reverter', DEGEN_SCALPER: 'Degen Scalper', RANGE_TRADER: 'Range Trader', DIAMOND_HANDS: 'Diamond Hands', TILT_MONSTER: 'Tilt Monster' };
 const ARCHS = Object.keys(ARCH);
-const TIER = { nerves: ['Nerveless', 'Steel', 'Steady', 'Jumpy', 'Paranoid'], aggr: ['Pacifist', 'Timid', 'Measured', 'Aggressive', 'Feral'], greed: ['Ascetic', 'Modest', 'Hungry', 'Ravenous', 'Insatiable'], alleg: ['BTC purist', 'BTC purist', 'BTC + ETH', 'BTC + ETH + SOL', 'BTC + ETH + SOL'] };
+const TIER = { nerves: ['Nerveless', 'Steel', 'Steady', 'Jumpy', 'Paranoid'], aggr: ['Pacifist', 'Timid', 'Measured', 'Aggressive', 'Feral'], greed: ['Ascetic', 'Modest', 'Hungry', 'Ravenous', 'Insatiable'], alleg: ['Blue-chip purist', 'Majors tourist', 'Diversified', 'Tail believer', 'Tail maxi'] };
 const DIAL_W = [3, 27, 40, 27, 3];                    // REKT's tier distribution
 const TRAIL_K = [5, 3.5, 2.5, 1.5, 1.0];             // nerves -> ATR multiple of the trailing stop
 const GREED_M = [0.6, 0.8, 1.0, 1.3, 1.6];           // greed -> trail looseness
@@ -249,10 +255,13 @@ const TEMPER_T = [12, 24, 48, 96, 192];               // tilt duration (bars)
 function R_rng(a) { return function() { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const pick = (rng, arr) => arr[Math.floor(rng() * arr.length) % arr.length];
 const pickW = (rng, w) => { let r = rng() * w.reduce((s, x) => s + x, 0); for (let i = 0; i < w.length; i++) { r -= w[i]; if (r < 0) return i; } return w.length - 1; };
-const state = { bars: {}, barMap: {}, ind: {}, grid: null, arena: null, shadow: null, universe: null, live: {} };
+const state = { rows: {}, px: {}, ind: {}, grid: null, arena: null, shadow: null, universe: null, universes: [], live: {} };
 const fmtT = ts => { const d = new Date(ts); return String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0') + ' ' + String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0'); };
 const fmtN = (x, d = 0) => x == null || Number.isNaN(x) ? '–' : x.toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d });
-const toSym = coin => coin.startsWith('k') ? '1000' + coin.slice(1) + 'USDT' : coin + 'USDT';
+const toSym = coin => coin;   // v2: REKT pair names are Hyperliquid coin names already
+const post = b => fetch('https://api.hyperliquid.xyz/info', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) }).then(r => { if (!r.ok) throw new Error('HL ' + r.status); return r.json(); });
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const limiter = { ts: [], max: 45, async wait() { for (;;) { const now = Date.now(); this.ts = this.ts.filter(t => now - t < 60e3); if (this.ts.length < this.max) { this.ts.push(now); return; } await sleep(1000 + (this.ts[0] + 60e3 - now)); } } };
 async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(url.split('?')[0].split('/').slice(-1)[0] + ' ' + r.status); return r.json(); }
 const idb = { db: null,
   open() { return new Promise(res => { if (this.db) return res(this.db); try { const r = indexedDB.open('rektLabBars', 1); r.onupgradeneeded = () => r.result.createObjectStore('bars'); r.onsuccess = () => { this.db = r.result; res(this.db); }; r.onerror = () => res(null); } catch (e) { res(null); } }); },
@@ -260,22 +269,59 @@ const idb = { db: null,
   async set(k, v) { const db = await this.open(); if (!db) return; try { db.transaction('bars', 'readwrite').objectStore('bars').put(v, k); } catch (e) {} } };
 
 /* ---------- data ---------- */
-async function loadBars(sym, from, to) {
-  const key = sym + '|' + from;
-  let rows = state.bars[sym] || await idb.get(key) || [];
-  let t = rows.length ? rows[rows.length - 1][0] + BAR : from;
-  const before = rows.length;
-  for (let i = 0; i < 40 && t < to; i++) {
-    const r = await getJSON(`https://fapi.binance.com/fapi/v1/klines?symbol=${sym}&interval=5m&startTime=${t}&endTime=${to}&limit=1500`);
-    if (!r.length) break;
-    for (const k of r) rows.push([k[0], +k[1], +k[2], +k[3], +k[4]]);
-    if (r.length < 1500) break;
-    t = r[r.length - 1][6] + 1;
+function denseFrom(rows, grid0, n) {
+  const o = new Float32Array(n), h = new Float32Array(n), l = new Float32Array(n), c = new Float32Array(n), has = new Uint8Array(n);
+  let last = NaN, j = 0; const m = rows.length;
+  for (let i = 0; i < n; i++) { const t = grid0 + i * BAR;
+    while (j < m && rows[j][0] + (rows[j][5] || BAR) <= t) { last = rows[j][4]; j++; }
+    if (j < m && rows[j][0] <= t) { const r = rows[j]; o[i] = r[1]; h[i] = r[2]; l[i] = r[3]; c[i] = r[4]; has[i] = 1; last = r[4]; }
+    else if (!isNaN(last)) { o[i] = h[i] = l[i] = c[i] = last; has[i] = 2; } else { o[i] = h[i] = l[i] = c[i] = NaN; has[i] = 0; } }
+  return { o, h, l, c, has };
+}
+function B(coin, i) { const d = state.px[coin]; if (!d || !d.has[i]) return null; return [state.grid[i], d.o[i], d.h[i], d.l[i], d.c[i]]; }
+function lastPx(coin) { const d = state.px[coin]; if (!d) return null; for (let i = d.c.length - 1; i >= 0; i--) if (d.has[i]) return d.c[i]; return null; }
+async function hlCandles(coin, interval, startTime, endTime) {
+  await limiter.wait();
+  const j = await post({ type: 'candleSnapshot', req: { coin, interval, startTime, endTime } });
+  const ms = { '5m': 300e3, '1h': 3600e3 }[interval];
+  return (j || []).map(k => [k.t, +k.o, +k.h, +k.l, +k.c, ms]);
+}
+async function loadBars(coin, from, to) {   // 5m from Hyperliquid; 5m snapshot covers ≈17 days, older gap (fresh device) filled from 1h candles
+  const key = 'hl5m|' + coin + '|' + from;
+  let rows = state.rows[coin] || await idb.get(key) || [];
+  const end = rows.length ? rows[rows.length - 1][0] + (rows[rows.length - 1][5] || BAR) : from;
+  if (to - end > 2 * BAR) {
+    const t5 = Math.max(end, to - 4900 * BAR); const add = [];
+    if (t5 > end) { const r1h = await hlCandles(coin, '1h', end, t5); for (const r of r1h) if (r[0] >= end && r[0] < t5) add.push(r); }
+    const r5 = await hlCandles(coin, '5m', t5, to); for (const r of r5) if (r[0] >= t5) add.push(r);
+    rows = rows.concat(add);
   }
-  if (rows.length && rows[rows.length - 1][0] + BAR > Date.now()) rows.pop();
-  if (rows.length - before > 50) idb.set(key, rows);
-  state.bars[sym] = rows; state.barMap[sym] = new Map(rows.map(b => [b[0], b]));
+  if (rows.length && rows[rows.length - 1][0] + (rows[rows.length - 1][5] || BAR) > Date.now()) rows.pop();
+  state.rows[coin] = rows; if (rows.length) idb.set(key, rows);
+  const n = state.grid.length; state.px[coin] = denseFrom(rows, state.grid[0], n);
+  const d = state.px[coin]; const bars = []; for (let i = 0; i < n; i++) bars.push([state.grid[i], d.o[i], d.h[i], d.l[i], d.c[i]]);
+  state.ind[coin] = indicators(bars);
   return rows;
+}
+async function loadMany(coins, from, to, label, txt) {
+  let k = 0; const errs = [];
+  const q = coins.slice(); const worker = async () => { while (q.length) { const c = q.shift(); k++; if (txt) txt.textContent = `${label} ${k}/${coins.length}…`; try { await loadBars(c, from, to); } catch (e) { errs.push(c); } } };
+  await Promise.all([worker(), worker(), worker()]);
+  return errs;
+}
+/* ---------- universe snapshots (weekly) ---------- */
+async function loadUniverses() {
+  const files = [UNI_FIRST]; for (let m = UNI_MONDAY0; m <= Date.now(); m += 7 * DAY) files.push('data/hl-universe-' + new Date(m).toISOString().slice(0, 10) + '.json');
+  const out = [];
+  for (const f of files) { try { const j = await getJSON(f + '?v=' + Math.floor(Date.now() / H1)); j.file = f; const list = j.coins.map(c => c.c); const maj = j.majors || MAJORS; const rest = list.filter(c => !maj.includes(c)); j.mids = rest.slice(0, MID_N); j.tails = rest.slice(MID_N, MID_N + TAIL_N); j.all = new Set(list); out.push(j); } catch (e) {} }
+  if (!out.length) throw new Error('no universe snapshot');
+  out.sort((a, b) => a.frozen - b.frozen); state.universes = out; state.universe = new Set(out[out.length - 1].all);
+}
+const uniAt = ts => { let u = state.universes[0]; for (const x of state.universes) if (x.frozen <= ts) u = x; return u; };
+function drawCoins(rng, alleg, birth) {   // deterministic watchlist from the universe in force at birth
+  const u = uniAt(birth); const [nm, nt] = WL[alleg]; const out = WL_MAJ[alleg].slice();
+  const take = (src, n) => { const pool = src.slice(); for (let i = 0; i < n && pool.length; i++) { const q = Math.floor(rng() * pool.length) % pool.length; out.push(pool.splice(q, 1)[0]); } };
+  take(u.mids, nm); take(u.tails, nt); return out;
 }
 /* ---------- indicators ---------- */
 function indicators(bars) {
@@ -295,6 +341,7 @@ function R_draw(rng, birth) {
   const g = { id: 'R' + String(++R_ID).padStart(3, '0'), arch: pick(rng, ARCHS), nerves: pickW(rng, DIAL_W), aggr: pickW(rng, DIAL_W), greed: pickW(rng, DIAL_W), alleg: pickW(rng, DIAL_W), temper: pickW(rng, DIAL_W), birth, parent: null };
   const lo = LEV_FLOOR[g.aggr], hi = Math.max(LEV_FLOOR[g.aggr], LEV_CEIL[g.greed]);
   g.lev = lo + Math.floor(rng() * (hi - lo + 1)) % (hi - lo + 1);
+  g.coins = drawCoins(rng, g.alleg, birth);
   return g;
 }
 function R_mut(rng, par, birth) {
@@ -302,10 +349,11 @@ function R_mut(rng, par, birth) {
   const k = pick(rng, ['nerves', 'aggr', 'greed', 'alleg', 'lev']);
   if (k === 'lev') { const lo = LEV_FLOOR[g.aggr], hi = Math.max(lo, LEV_CEIL[g.greed]); g.lev = lo + Math.floor(rng() * (hi - lo + 1)) % (hi - lo + 1); }
   else g[k] = pickW(rng, DIAL_W);
+  if (k === 'alleg') g.coins = drawCoins(rng, g.alleg, birth);
   return g;
 }
-const coinsOf = g => g.alleg <= 1 ? ['BTCUSDT'] : g.alleg === 2 ? ['BTCUSDT', 'ETHUSDT'] : COINS;
-function R_desc(g, s) { return s ? `${ARCH[g.arch]} · ${TIER.nerves[g.nerves]} / ${TIER.aggr[g.aggr]} / ${TIER.greed[g.greed]}` : `${ARCH[g.arch]} · nerves ${TIER.nerves[g.nerves]} · aggression ${TIER.aggr[g.aggr]} · greed ${TIER.greed[g.greed]} · ${TIER.alleg[g.alleg]} · ${g.lev}x`; }
+const coinsOf = g => g.coins.filter(c => state.px[c]);
+function R_desc(g, s) { return s ? `${ARCH[g.arch]} · ${TIER.nerves[g.nerves]} / ${TIER.aggr[g.aggr]} / ${TIER.greed[g.greed]}` : `${ARCH[g.arch]} · nerves ${TIER.nerves[g.nerves]} · aggression ${TIER.aggr[g.aggr]} · greed ${TIER.greed[g.greed]} · ${TIER.alleg[g.alleg]} (${g.coins.length} mkts) · ${g.lev}x`; }
 
 /* ---------- desk simulator: one desk, several books, REKT mechanics on our money rules ---------- */
 function R_score(g, fromTs, toTs, out) {
@@ -316,7 +364,7 @@ function R_score(g, fromTs, toTs, out) {
   const Z = [3, 2.5, 2.2, 2, 1.8][g.aggr], burst = [0.006, 0.005, 0.004, 0.003, 0.0025][g.aggr], m = ENTRY_M[g.aggr];
   let cash = 1, trades = 0, liqs = 0, tiltUntil = -1, diamondDone = false; const pos = new Map();
   const rec = (ts, act, coin, side, px, usd, eq, why) => { if (out) out.push({ ts, act, coin, side, px, g, usd: usd * R_DEP, bal: eq * R_DEP, why }); };
-  const equity = i => { let eq = cash; for (const p of pos.values()) { const b = state.barMap[p.sym].get(grid[i]); const px = b ? b[4] : p.last; p.last = px; eq += p.alloc + p.N * p.side * (px / p.entry - 1) - p.fund; } return eq; };
+  const equity = i => { let eq = cash; for (const p of pos.values()) { const b = B(p.sym, i); const px = b ? b[4] : p.last; p.last = px; eq += p.alloc + p.N * p.side * (px / p.entry - 1) - p.fund; } return eq; };
   const closeP = (p, px, i, act, why) => { const pnl = p.N * p.side * (px / p.entry - 1); cash += p.alloc + pnl - p.N * R_FEE - p.fund; trades++; pos.delete(p.sym); const net = pnl - p.N * R_FEE * 2 - p.fund; if (net < 0 && g.arch === 'TILT_MONSTER') tiltUntil = i + TEMPER_T[g.temper]; rec(grid[i] + BAR, act, p.coin, p.side, px, net, cash + [...pos.values()].reduce((s, q) => s + q.alloc, 0), why); };
   const openP = (sym, side, px, i, why, sizeMult) => { const eq = equity(i); if (eq <= 0.05) return; const alloc = Math.min(cash, eq / nB * (sizeMult || 1)); if (alloc <= 0.01) return; const Nn = alloc * L; cash -= alloc + Nn * R_FEE;
     pos.set(sym, { sym, coin: sym.replace('USDT', ''), side, alloc, alloc0: alloc, N: Nn, N0: Nn, entry: px, extreme: px, openedIdx: i, fund: 0, adds: 0, last: px }); rec(grid[i] + BAR, 'OPEN', sym.replace('USDT', ''), side, px, alloc, cash + [...pos.values()].reduce((s, q) => s + q.alloc, 0), why); };
@@ -325,7 +373,7 @@ function R_score(g, fromTs, toTs, out) {
     const tilted = g.arch === 'TILT_MONSTER' && i <= tiltUntil;
     // 1) manage open books
     for (const p of [...pos.values()]) {
-      const b = state.barMap[p.sym].get(t); if (!b) continue; const I = state.ind[p.sym]; const j = I.idx.get(t); const atr = I.atr[j];
+      const b = B(p.sym, i); if (!b) continue; const I = state.ind[p.sym]; const j = i; const atr = I.atr[j];
       p.fund += p.N * R_FUND_H / 12;
       const adverse = p.side === 1 ? b[3] : b[2];
       if (p.side * (adverse / p.entry - 1) * L * (p.N / (p.alloc * L)) <= -0.95) { cash += p.alloc * 0.02; liqs++; trades++; pos.delete(p.sym); rec(t + BAR, 'LIQ', p.coin, p.side, adverse, -p.alloc * 0.98, cash, `margin gone at ${L}x`); continue; }
@@ -345,7 +393,7 @@ function R_score(g, fromTs, toTs, out) {
     // 2) entries
     for (const sym of coins) {
       if (pos.has(sym)) continue;
-      const b = state.barMap[sym].get(t); if (!b) continue; const I = state.ind[sym]; const j = I.idx.get(t); if (j < 1) continue;
+      const b = B(sym, i); if (!b) continue; const I = state.ind[sym]; const j = i; if (j < 1) continue;
       const cl = b[4], pc = I.c[j - 1], atr = I.atr[j]; if (Number.isNaN(atr)) continue;
       let side = 0, why = '';
       if (g.arch === 'MOMENTUM_APE' || g.arch === 'TILT_MONSTER') {
@@ -390,27 +438,28 @@ function R_replay() {
   return { pool, gen, deaths, now, bench: bench.length, evo };
 }
 
-/* ---------- shadow desks: replay the REKT top 10's own fills on Binance prices with our money rules ---------- */
+/* ---------- shadow desks: replay the REKT top 10's own fills on Hyperliquid 5m prices (their own tape) with our money rules ---------- */
 function shadowReplay(desk, opts) {
   const SCALE = R_DEP / state.shadowMeta.startingCashUsd;           // their $10,000 stack -> our $1,000
   const fills = desk.fills.filter(f => !(opts.noSqueeze && f[6] === 'SQUEEZE_FORCED')).slice().sort((a, b) => a[0] - b[0]);
   let cash = 1, realized = 0, fees = 0, funding = 0, used = 0, skipped = 0, skippedUsd = 0, dead = null;
   const pos = new Map();   // sym -> {side, N (notional, our units), entry}
-  const priceAt = (sym, ts) => { const b = state.barMap[sym] && state.barMap[sym].get(Math.floor((ts - 1) / BAR) * BAR); return b ? b[4] : null; };
+  const gI = ts => Math.floor((Math.floor((ts - 1) / BAR) * BAR - state.grid[0]) / BAR);
+  const priceAt = (sym, ts) => { const i = gI(ts); const b = i >= 0 && i < state.grid.length ? B(sym, i) : null; return b ? b[4] : null; };
   const equityAt = ts => { let eq = cash; for (const p of pos.values()) { const px = priceAt(p.sym, ts) || p.entry; eq += p.N * p.side * (px / p.entry - 1); } return eq; };
   const curve = [];
   let lastTs = fills.length ? fills[0][0] : REKT_START;
   const mark = ts => { // funding + liquidation check between fills, bar by bar
     for (let t = Math.floor(lastTs / BAR) * BAR + BAR; t <= ts && !dead; t += BAR) {
       let notional = 0; for (const p of pos.values()) { notional += p.N; const c = p.N * R_FUND_H / 12; cash -= c; funding += c; }
-      let eq = cash; for (const p of pos.values()) { const b = state.barMap[p.sym].get(t); if (!b) continue; const adverse = p.side === 1 ? b[3] : b[2]; eq += p.N * p.side * (adverse / p.entry - 1); }
+      let eq = cash; for (const p of pos.values()) { const i = gI(t + 1); const b = i >= 0 && i < state.grid.length ? B(p.sym, i) : null; if (!b) continue; const adverse = p.side === 1 ? b[3] : b[2]; eq += p.N * p.side * (adverse / p.entry - 1); }
       if (notional > 0 && eq <= 0.005 * notional) { dead = t; cash = 0; pos.clear(); }
     }
     lastTs = ts;
   };
   for (const f of fills) {
     const [ts, pair, dir, deltaUsd, px, pnl, reason] = f; const sym = toSym(pair);
-    if (!state.universe.has(sym) || !state.barMap[sym]) { skipped++; skippedUsd += Math.abs(deltaUsd); continue; }
+    if (!state.universe.has(sym) || !state.px[sym]) { skipped++; skippedUsd += Math.abs(deltaUsd); continue; }
     mark(ts); if (dead) break;
     const ourPx = priceAt(sym, ts); if (!ourPx) { skipped++; skippedUsd += Math.abs(deltaUsd); continue; }
     const delta = deltaUsd * SCALE / R_DEP;                    // notional in equity units (1 = $1,000)
@@ -441,13 +490,17 @@ function renderArena() {
     return `<tr><td>${i + 1}</td><td><b>${x.g.id}</b></td><td class="rule">${R_desc(x.g)}</td><td class="${x.s.ret >= 0 ? 'up' : 'down'}"><b>$${fmtN(eq)}</b> (${x.s.ret >= 0 ? '+' : ''}${x.s.ret.toFixed(2)}%)</td><td><div class="hbar"><i style="left:0;width:${w}%;background:${x.s.ret >= 0 ? 'linear-gradient(90deg,#8fd694,#c9d64f)' : 'linear-gradient(90deg,#e0806e,#c96a5a)'}"></i></div></td><td>${x.s.trades}${x.s.liqs ? ` <span class="down">☠${x.s.liqs}</span>` : ''}</td><td>${st}</td></tr>`; }).join('');
   const avg = scored.reduce((s, x) => s + x.s.ret, 0) / scored.length, med = scored.map(x => x.s.ret).sort((p, q) => p - q)[Math.floor(scored.length / 2)];
   $('arenaTag').textContent = `Gen ${a.gen} · ${a.deaths} retired · ${prof}/${R_SEATS} profitable · ${inPos}/${R_SEATS} in position · bench ${a.bench}`;
-  $('arenaNote').textContent = `Forward-only since ${new Date(REKT_START).toISOString().slice(0, 10)} (REKT's own opening bell). Seat average ${avg >= 0 ? '+' : ''}${avg.toFixed(2)}% · median ${med >= 0 ? '+' : ''}${med.toFixed(2)}% · Binance USDT-M 5m · fee 0.07%/side + funding drag · liquidation on the wick · no squeeze, leverage 1–10x by the desk's own dials.`;
+  $('arenaNote').textContent = `Forward-only since ${new Date(REKT_START).toISOString().slice(0, 10)} (REKT's own opening bell). Seat average ${avg >= 0 ? '+' : ''}${avg.toFixed(2)}% · median ${med >= 0 ? '+' : ''}${med.toFixed(2)}% · Hyperliquid 5m · fee 0.07%/side + funding drag · liquidation on the wick · no squeeze, leverage 1–10x by the desk's own dials.`;
   $('cArena').textContent = `Gen ${a.gen} · ${inPos}/${R_SEATS} in position`; $('cArenaD').textContent = `Leader ${scored[0].g.id} ${scored[0].s.ret >= 0 ? '+' : ''}${scored[0].s.ret.toFixed(2)}%`;
   // archetype standings, REKT-style
   const REKT_REF = { RANGE_TRADER: [28, -32.8], MOMENTUM_APE: [6, -60.1], MEAN_REVERTER: [29, -83.1], TILT_MONSTER: [29, -81.1], DEGEN_SCALPER: [4, -99.0], DIAMOND_HANDS: [3, -26.4] };
   const born = {}, alive = {}; for (const g of a.pool) alive[g.arch] = (alive[g.arch] || 0) + 1; for (const e of a.evo) if (e.act === 'RETIRED') born[e.g.arch] = (born[e.g.arch] || 0) + 1;
   const rows = ARCHS.map(k => { const arr = scored.filter(x => x.g.arch === k); const n = arr.length, d = born[k] || 0; const avgR = n ? arr.reduce((s, x) => s + x.s.ret, 0) / n : NaN; const best = arr.slice().sort((p, q) => q.s.ret - p.s.ret)[0]; return { k, n, d, alivePct: n + d ? n / (n + d) * 100 : 0, avg: avgR, best, tr: arr.reduce((s, x) => s + x.s.trades, 0) }; }).sort((p, q) => (q.avg || -1e9) - (p.avg || -1e9));
   $('species').innerHTML = rows.map(r => `<div class="sp"><b>${ARCH[r.k]}</b> · ${r.n} seated · ${r.d} retired<br><span class="${r.avg >= 0 ? 'up' : 'down'}">avg ${Number.isNaN(r.avg) ? '–' : (r.avg >= 0 ? '+' : '') + r.avg.toFixed(2) + '%'}</span> · ${r.tr} trades · ${r.alivePct.toFixed(0)}% alive<div class="bar"><i style="width:${Math.min(100, Math.abs(r.avg || 0) / Math.max(1, ...rows.map(x => Math.abs(x.avg || 0))) * 100)}%;${(r.avg || 0) < 0 ? 'background:linear-gradient(90deg,#e0806e,#c96a5a)' : ''}"></i></div>REKT dry run: ${REKT_REF[r.k][0]}% alive · avg ${REKT_REF[r.k][1]}%${r.best ? `<br>best ${r.best.g.id} ${r.best.s.ret >= 0 ? '+' : ''}${r.best.s.ret.toFixed(1)}%` : ''}</div>`).join('');
+  // allegiance standings: does the coin tier (majors vs mid caps vs the tail) decide survival?
+  const al = [0, 1, 2, 3, 4].map(t => { const arr = scored.filter(x => x.g.alleg === t); const n = arr.length; return { t, n, avg: n ? arr.reduce((s, x) => s + x.s.ret, 0) / n : NaN, tr: arr.reduce((s, x) => s + x.s.trades, 0), liqs: arr.reduce((s, x) => s + x.s.liqs, 0), prof: arr.filter(x => x.s.ret > 0).length }; });
+  const amax = Math.max(1, ...al.map(x => Math.abs(x.avg || 0)));
+  $('species').innerHTML += `<div class="sp" style="grid-column:1/-1;background:transparent;padding:4px 0 0"><b>Allegiance · which coin tier the desk lives in</b></div>` + al.map(r => `<div class="sp"><b>${TIER.alleg[r.t]}</b> · ${r.n} seated · ${r.prof} profitable<br><span class="${r.avg >= 0 ? 'up' : 'down'}">avg ${Number.isNaN(r.avg) ? '–' : (r.avg >= 0 ? '+' : '') + r.avg.toFixed(2) + '%'}</span> · ${r.tr} trades · ${r.liqs} liq<div class="bar"><i style="width:${Math.min(100, Math.abs(r.avg || 0) / amax * 100)}%;${(r.avg || 0) < 0 ? 'background:linear-gradient(90deg,#e0806e,#c96a5a)' : ''}"></i></div>${['BTC only', 'BTC / ETH / SOL', 'majors + 8 mid caps', 'BTC + 2 mid caps + 6 tail coins', '10 tail coins only'][r.t]}</div>`).join('');
   renderFeed(scored);
 }
 function renderFeed(scored) {
@@ -466,44 +519,55 @@ function renderFeed(scored) {
 }
 function renderShadow() {
   const S = state.shadow; if (!S) return;
+  if (!state.shadowMeta || !state.shadowMeta.ready) { $('shadow').innerHTML = '<tr><td colspan="9" style="color:var(--muted);text-align:center;padding:14px">Pricing the shadow desks\' markets on Hyperliquid… (arena above is live)</td></tr>'; $('shadowTag').textContent = 'loading'; return; }
   const rows = S.desks.map(d => { const all = shadowReplay(d, {}), nsq = shadowReplay(d, { noSqueeze: true }); const theirRet = (d.equityUsd / state.shadowMeta.startingCashUsd - 1) * 100; return { d, all, nsq, theirRet }; });
   state.shadowRows = rows;
   $('shadow').innerHTML = rows.map(r => `<tr><td>#${r.d.rank}</td><td><b>Tradooor #${r.d.id}</b></td><td style="text-align:left">${ARCH[r.d.archetype] || r.d.archetype || '–'}</td><td class="${r.theirRet >= 0 ? 'up' : 'down'}">${r.theirRet >= 0 ? '+' : ''}${fmtN(r.theirRet, 1)}%</td><td class="${r.all.ret >= 0 ? 'up' : 'down'}">${r.all.dead ? '<span class="pill loss">REKT</span> ' : ''}${r.all.ret >= 0 ? '+' : ''}${fmtN(r.all.ret, 1)}%</td><td class="${r.nsq.ret >= 0 ? 'up' : 'down'}">${r.nsq.dead ? '<span class="pill loss">REKT</span> ' : ''}${r.nsq.ret >= 0 ? '+' : ''}${fmtN(r.nsq.ret, 1)}%</td><td>${r.all.used}/${r.d.fills.length}</td><td>$${fmtN(r.all.fees + r.all.funding)}</td></tr>`).join('');
   const nUsed = rows.reduce((s, r) => s + r.all.used, 0), nAll = rows.reduce((s, r) => s + r.d.fills.length, 0), dead = rows.filter(r => r.all.dead).length, deadN = rows.filter(r => r.nsq.dead).length;
   const avgTheir = rows.reduce((s, r) => s + r.theirRet, 0) / rows.length, avgAll = rows.reduce((s, r) => s + r.all.ret, 0) / rows.length, avgN = rows.reduce((s, r) => s + r.nsq.ret, 0) / rows.length;
-  $('shadowTag').textContent = `${S.source} · ${rows.length} desks · ${nUsed}/${nAll} fills replayable on Binance`;
-  $('shadowNote').innerHTML = `Each desk starts with our $1,000 (their $10,000 stack scaled ×0.1) and its <b>own</b> fill log is replayed at the Binance 5m close of the same candle, with our 0.07%/side fee, funding drag and a 0.5%-of-notional maintenance line. Fills on coins Binance does not list are skipped (${nAll - nUsed}). Their reported result averaged <b>${avgTheir >= 0 ? '+' : ''}${avgTheir.toFixed(0)}%</b>; on our venue and costs the same fills average <b>${avgAll >= 0 ? '+' : ''}${avgAll.toFixed(0)}%</b> (${dead}/${rows.length} blown up); dropping every squeeze-forced fill leaves <b>${avgN >= 0 ? '+' : ''}${avgN.toFixed(0)}%</b> (${deadN} blown up). The gap between the three columns is how much of the "top 10" was venue, forced leverage and survivorship rather than method.`;
+  $('shadowTag').textContent = `${S.source} · ${rows.length} desks · ${nUsed}/${nAll} fills replayable on Hyperliquid perps`;
+  $('shadowNote').innerHTML = `Each desk starts with our $1,000 (their $10,000 stack scaled ×0.1) and its <b>own</b> fill log is replayed at the Hyperliquid 5m close of the same candle, with our 0.07%/side fee, funding drag and a 0.5%-of-notional maintenance line. Fills on coins Hyperliquid does not list are skipped (${nAll - nUsed}). Their reported result averaged <b>${avgTheir >= 0 ? '+' : ''}${avgTheir.toFixed(0)}%</b>; on our venue and costs the same fills average <b>${avgAll >= 0 ? '+' : ''}${avgAll.toFixed(0)}%</b> (${dead}/${rows.length} blown up); dropping every squeeze-forced fill leaves <b>${avgN >= 0 ? '+' : ''}${avgN.toFixed(0)}%</b> (${deadN} blown up). The gap between the three columns is how much of the "top 10" was venue, forced leverage and survivorship rather than method.`;
 }
 function renderAll() {
   if ($('app').classList.contains('loading')) { $('app').classList.remove('loading'); $('app').innerHTML = $('tpl').innerHTML; }
-  const b = state.bars.BTCUSDT; if (b && b.length) { const px = b[b.length - 1][4], p24 = b[b.length - 289] ? (px / b[b.length - 289][4] - 1) * 100 : 0; $('cPrice').textContent = '$' + fmtN(px); $('cPriceD').innerHTML = `<span class="${p24 >= 0 ? 'up' : 'down'}">${p24 >= 0 ? '+' : ''}${p24.toFixed(2)}%</span> 24h`; }
+  const d = state.px.BTC; if (d) { const n = d.c.length; const px = lastPx('BTC'), p24 = n > 289 && d.has[n - 289] ? (px / d.c[n - 289] - 1) * 100 : 0; $('cPrice').textContent = '$' + fmtN(px); $('cPriceD').innerHTML = `<span class="${p24 >= 0 ? 'up' : 'down'}">${p24 >= 0 ? '+' : ''}${p24.toFixed(2)}%</span> 24h`; }
   renderArena(); renderShadow();
-  const S = state.shadow; if (S) { $('cShadow').textContent = `${S.desks.length} desks`; $('cShadowD').textContent = 'REKT dry-run top 10 · replayed on Binance'; }
+  const S = state.shadow; if (S) { $('cShadow').textContent = `${S.desks.length} desks`; $('cShadowD').textContent = 'REKT dry-run top 10 · replayed on Hyperliquid'; }
   $('cSpecies').textContent = `${ARCHS.length} archetypes`; $('cSpeciesD').textContent = '4 dials × 5 tiers · 100 desks + 300 bench';
-  $('foot').innerHTML = `REKT Lab v1.0 · seed ${REKT_SEED} · archetype pack ported from tradooor.rekt.com (engine 0.13.0) · pyramid adds, ATR trailing stops, fear/time stops, multi-book desks · no squeeze, 1–10x · weekly evolution on Monday 00:00 UTC · paper only.<br>Data: Binance USDT-M 5m since ${new Date(REKT_START - WARM).toISOString().slice(0, 10)} (cached in IndexedDB) · shadow fills from ${SHADOW_FILE}.`;
+  $('foot').innerHTML = `REKT Lab v${REKT_VER} · seed ${REKT_SEED} · archetype pack ported from tradooor.rekt.com (engine 0.13.0) · pyramid adds, ATR trailing stops, fear/time stops, multi-book desks · no squeeze, 1–10x · weekly evolution on Monday 00:00 UTC · paper only.<br>Data: Hyperliquid 5m candles (${state.live.priced || 0} markets priced) since ${new Date(REKT_START - WARM).toISOString().slice(0, 10)} (cached in IndexedDB) · shadow fills from ${SHADOW_FILE}.`;
 }
 window.REKT = { state, replay: R_replay, score: R_score, desc: R_desc, shadow: shadowReplay };
 
+function genesisCoins() {   // the coin set of the first 400 draws (seeded, so identical to R_replay's first 400) — what must be priced before replay
+  const rng = R_rng(REKT_SEED); R_ID = 0; const set = new Set(MAJORS);
+  for (let i = 0; i < R_SEATS + R_BENCH; i++) for (const c of R_draw(rng, REKT_START).coins) set.add(c);
+  return [...set];
+}
 async function boot() {
   const dot = $('connDot'), txt = $('connTxt');
   try {
     txt.textContent = 'Loading universe + shadow fills…';
-    const [uni, sh] = await Promise.all([getJSON(UNIVERSE_FILE + '?v=1').catch(() => null), getJSON(SHADOW_FILE + '?v=' + Math.floor(Date.now() / H1)).catch(() => null)]);
-    state.universe = new Set(uni ? uni.binanceUniverse : COINS);
+    await loadUniverses();
+    const sh = await getJSON(SHADOW_FILE + '?v=' + Math.floor(Date.now() / H1)).catch(() => null);
     state.shadow = sh;
-    txt.textContent = 'Loading Binance 5m bars…';
     const from = REKT_START - WARM, to = Date.now();
-    for (const sym of COINS) { await loadBars(sym, from, to); state.ind[sym] = indicators(state.bars[sym]); state.ind[sym].idx = new Map(state.bars[sym].map((b, i) => [b[0], i])); }
     const grid = []; for (let t = from; t + BAR <= to; t += BAR) grid.push(t); state.grid = grid;
-    if (sh) {
-      const tsAll = sh.desks.flatMap(d => d.fills.map(f => f[0])); const t0 = Math.floor(Math.min(...tsAll) / BAR) * BAR - BAR, t1 = Math.max(...tsAll) + 6 * H1;
-      state.shadowMeta = { startingCashUsd: sh.startingCashUsd, endTs: t1 };
-      const syms = [...new Set(sh.desks.flatMap(d => d.fills.map(f => toSym(f[1]))))].filter(s => state.universe.has(s) && !COINS.includes(s));
-      let k = 0; for (const s of syms) { k++; txt.textContent = `Loading shadow prices ${k}/${syms.length}…`; try { await loadBars(s, t0, t1); } catch (e) { state.universe.delete(s); } }
-    }
+    for (const c of Object.keys(state.rows)) if (state.px[c] && state.px[c].c.length !== grid.length) { state.px[c] = denseFrom(state.rows[c], from, grid.length); }
+    const want = genesisCoins().filter(c => state.universe.has(c));
+    const errs = await loadMany(want, from, to, 'Loading Hyperliquid 5m bars', txt);
     txt.textContent = 'Replaying 100 desks…';
     state.arena = R_replay();
-    renderAll();
+    // bots born by mutation may carry coins that were not in the genesis set: price them and replay once more
+    const extra = [...new Set(state.arena.pool.flatMap(g => g.coins))].filter(c => state.universe.has(c) && !state.px[c]);
+    if (extra.length) { await loadMany(extra, from, to, 'Pricing newborn watchlists', txt); state.arena = R_replay(); }
+    state.live.priced = Object.keys(state.px).length; state.live.errs = errs;
+    if (sh && !state.shadowMeta) { const tsAll = sh.desks.flatMap(d => d.fills.map(f => f[0])); state.shadowMeta = { startingCashUsd: sh.startingCashUsd, endTs: Math.max(...tsAll) + 6 * H1, ready: false }; }
+    renderAll();   // arena first; the shadow desks fill in below once their ~100 extra markets are priced
+    if (sh) {
+      const syms = [...new Set(sh.desks.flatMap(d => d.fills.map(f => toSym(f[1]))))].filter(c => state.universe.has(c) && !state.px[c]);
+      if (syms.length) await loadMany(syms, from, to, 'Arena live · pricing shadow desks', txt);
+      state.shadowMeta.ready = true; state.live.priced = Object.keys(state.px).length; renderAll();
+    }
     dot.className = 'dot ok'; txt.textContent = 'Live · ' + new Date().toISOString().slice(11, 19) + ' UTC';
   } catch (e) {
     dot.className = 'dot err'; txt.textContent = 'Error';
@@ -588,11 +652,11 @@ setInterval(boot, 10 * 60e3);
   const VALUE_SEL = '.chip .v, .mini .v, .stat .v';
   const q = (roots, sel) => { const out = []; for (const r of roots) { if (r.matches(sel)) out.push(r); out.push(...r.querySelectorAll(sel)); } return out; };
   function entrance(roots) {
-    q(roots, '.card, .chip').forEach(el => { if (el.__mi) return; el.__mi = 1; el.style.setProperty('--i', [...el.parentNode.children].indexOf(el)); });
-    q(roots, '.sp, .sig, .gauge').forEach(el => { if (el.__mi) return; el.__mi = 1; el.style.setProperty('--i', Math.min(14, [...el.parentNode.children].indexOf(el))); });
+    q(roots, '.card, .chip').forEach(el => { if (el.__mi) return; el.__mi = 1; if (el.parentNode) el.style.setProperty('--i', [...el.parentNode.children].indexOf(el)); });
+    q(roots, '.sp, .sig, .gauge').forEach(el => { if (el.__mi) return; el.__mi = 1; if (el.parentNode) el.style.setProperty('--i', Math.min(14, [...el.parentNode.children].indexOf(el))); });
     q(roots, 'tbody').forEach(tb => { if (tb.__seen || !tb.children.length) return; tb.__seen = 1; [...tb.children].slice(0, 40).forEach((tr, i) => { tr.classList.add('m-row'); tr.style.setProperty('--r', i); }); });
     // feed rows: flash only rows never seen in this container (batched so a whole re-render staggers correctly)
-    const byC = new Map(); for (const r of q(roots, '.frow')) { const c = r.parentNode; if (!byC.has(c)) byC.set(c, new Set()); byC.get(c).add(r); }
+    const byC = new Map(); for (const r of q(roots, '.frow')) { const c = r.parentNode; if (!c) continue; if (!byC.has(c)) byC.set(c, new Set()); byC.get(c).add(r); }
     for (const [c, rs] of byC) { const seen = c.__seen || (c.__seen = new Set()); const first = !seen.size; let n = 0; for (const r of rs) { const k = r.textContent; if (seen.has(k)) { r.classList.remove('m-new'); continue; } seen.add(k); r.classList.add('m-new'); r.style.setProperty('--r', Math.min(n++, first ? 24 : 6)); } if (seen.size > 2000) c.__seen = new Set([...seen].slice(-1000)); }
     q(roots, VALUE_SEL).forEach(value);
   }
