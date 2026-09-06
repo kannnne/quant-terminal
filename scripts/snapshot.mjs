@@ -67,7 +67,7 @@ async function snapSignals() {
   const page = await ctx.newPage(); const errs = []; page.on('pageerror', e => errs.push(e.message));
   const t0 = Date.now();
   await page.goto(`${BASE}/signals.html?still&snap=${now}`, { waitUntil: 'domcontentloaded' });
-  await waitFor(page, () => /^Live|^Error/.test((document.getElementById('connTxt') || {}).textContent || ''), 4 * 60e3, 'signals live');
+  await waitFor(page, () => /^Live|^Degraded|^Error/.test((document.getElementById('connTxt') || {}).textContent || ''), 4 * 60e3, 'signals live');
   await sleep(2000);
   const d = await page.evaluate(() => {
     const T = s => { const el = document.querySelector(s); return el ? el.innerText.replace(/\s+/g, ' ').trim() : null; };
