@@ -57,6 +57,7 @@ async function snapCopy() {
       feed: [...document.querySelectorAll('#feed .frow')].slice(0, 25).map(r => r.innerText.replace(/\s+/g, ' ').trim()),
     };
   });
+  d.banner = await page.evaluate(() => ((document.getElementById('errBanner') || {}).textContent || '').trim().slice(0, 300) || null);
   d.loadMs = Date.now() - t0; d.pageErrors = errs.slice(0, 5);
   await page.close(); return d;
 }
@@ -83,9 +84,10 @@ async function snapSignals() {
       seats: { n: sc.length, profitable: sc.filter(x => x.s.ret > 0).length, inPos: sc.filter(x => x.s.inPos).length, avg: sc.length ? +(sc.reduce((s, x) => s + x.s.ret, 0) / sc.length).toFixed(2) : null },
       species: [...document.querySelectorAll('#species .sp')].map(s => s.innerText.replace(/\s+/g, ' ').trim()),
       feed: [...document.querySelectorAll('#feed .frow')].slice(0, 25).map(r => r.innerText.replace(/\s+/g, ' ').trim()),
-      foot: T('#foot')?.slice(0, 200),
+      degraded: (window.SIG && SIG.state.degraded) || null, foot: T('#foot')?.slice(0, 200),
     };
   });
+  d.banner = await page.evaluate(() => ((document.getElementById('errBanner') || {}).textContent || '').trim().slice(0, 300) || null);
   d.loadMs = Date.now() - t0; d.pageErrors = errs.slice(0, 5);
   await page.close(); return d;
 }
@@ -117,6 +119,7 @@ async function snapRekt() {
       priced: S.live && S.live.priced, foot: T('#foot')?.slice(0, 200),
     };
   });
+  d.banner = await page.evaluate(() => ((document.getElementById('errBanner') || {}).textContent || '').trim().slice(0, 300) || null);
   d.loadMs = Date.now() - t0; d.pageErrors = errs.slice(0, 5);
   await page.close(); return d;
 }
@@ -130,7 +133,7 @@ await browser.close();
 /* ---------------- write files ---------------- */
 const write = (f, obj) => { const s = JSON.stringify(obj); writeFileSync(`${OUT}/${f}`, s); log('wrote', f, s.length, 'bytes'); };
 for (const k of ['copy', 'signals', 'rekt']) write(`${k}.json`, { taken: now, takenIso: out.takenIso, page: k, ...out.pages[k] });
-write('latest.json', { taken: now, takenIso: out.takenIso, site: BASE, pages: Object.fromEntries(Object.entries(out.pages).map(([k, v]) => [k, v.error ? { error: v.error } : { ok: true, loadMs: v.loadMs, conn: v.conn }])) });
+write('latest.json', { taken: now, takenIso: out.takenIso, site: BASE, pages: Object.fromEntries(Object.entries(out.pages).map(([k, v]) => [k, v.error ? { error: v.error } : { ok: !/^Error/.test(v.conn || ''), loadMs: v.loadMs, conn: v.conn, banner: v.banner }])) });
 
 // rolling hourly history (kept small: one line per hour, 14 days)
 const hf = `${OUT}/history.json`;
