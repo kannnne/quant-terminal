@@ -239,7 +239,7 @@ const ROSTER_MONDAY0 = Date.UTC(2026, 8, 7);
 const G = { who: ['all', 'top10', 'top25', 'whales', 'steady', 'lowlev'], delay: [1, 5, 15], k: [1, 1, 2, 3], maxPos: [3, 5], lev: [1, 1, 2, 2, 3, 5], sl: [0, 0.03, 0.05, 0.10], exit: ['mirror', 'mirror', 'h4', 'h24', 'h72'] };
 const WHO_NM = { all: 'all 100', top10: 'top 10 by ROI', top25: 'top 25 by ROI', whales: '25 biggest accounts', steady: 'steady (win ≥55%, ≥20 closes)', lowlev: 'low leverage (≤5x)' };
 const CONSENSUS_WIN = 4 * H1;
-const COPY_VER = '1.2';
+const COPY_VER = '1.3';
 
 function C_rng(a) { return function() { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const pick = (rng, arr) => arr[Math.floor(rng() * arr.length) % arr.length];
@@ -297,14 +297,12 @@ async function restFills(a, from) {
 async function syncFills(onProgress) {
   const cur = state.rosters[state.rosters.length - 1];
   const addrs = cur.traders.map(t => t.a);
-  state.sync = { done: 0, total: addrs.length, rest: 0 };
-  const cached = await idb.get('fills');
-  if (cached && cached.d) for (const [a, arr] of Object.entries(cached.d)) mergeFills(a, arr);
-  state.live.cachedAt = cached ? cached.t : null;
+  state.sync = { done: 0, total: addrs.length, rest: 0 }; state.syncing = true;
   // 1) WebSocket snapshots (no REST weight): wait up to 12 s for all 100
   WS.snap = new Map(); WS.start();
   const t0 = Date.now();
-  while (Date.now() - t0 < 12000 && WS.snap.size < addrs.length) { await sleep(250); if (onProgress) onProgress(`snapshots ${WS.snap.size}/${addrs.length}`); }
+  while (Date.now() - t0 < 12000 && WS.snap.size < addrs.length) { await sleep(250); if (onProgress) onProgress(`WebSocket ${state.live.ws || 'connecting'} · snapshots ${WS.snap.size}/${addrs.length}`); }
+  state.live.snapCount = WS.snap.size;
   // 2) decide who still needs REST
   const need = [];
   for (const a of addrs) {
@@ -324,7 +322,7 @@ async function syncFills(onProgress) {
     state.sync.done++; if (onProgress) onProgress(`REST gap-fill ${state.sync.done}/${need.length}`);
     await sleep(1050);
   }
-  persistFills();
+  persistFills(); state.syncing = false;
 }
 function buildEvents() {
   const ev = [];
@@ -537,7 +535,7 @@ function renderAll() {
   $('cTape').textContent = `${state.events.length} fills`; $('cTapeD').textContent = `${n24} in 24h · ${new Set(state.events.map(e => e.coin)).size} coins`;
   const sym = 'BTCUSDT', b = state.bars[sym]; if (b && b.length) { const px = b[b.length - 1][4], p24 = b[b.length - 1441] ? (px / b[b.length - 1441][4] - 1) * 100 : 0; $('cPrice').textContent = '$' + fmtN(px); $('cPriceD').innerHTML = `<span class="${p24 >= 0 ? 'up' : 'down'}">${p24 >= 0 ? '+' : ''}${p24.toFixed(2)}%</span> 24h`; }
   renderRoster(); renderTape(); renderArena();
-  $('foot').innerHTML = `Copy Desk v${COPY_VER} · last load: ${state.sync.rest || 0} REST gap-fill(s), rest from cache + WebSocket snapshots · seed ${COPY_SEED} · ${C_SEATS} copy bots (${Object.keys(G).length} genes: who / delay / consensus / slots / leverage / stop / exit) + ${C_BENCH}-bot bench · weekly evolution + roster re-freeze on Monday 00:00 UTC · leaders' fills from Hyperliquid's public API, bots priced on Binance USDT-M perps · paper only.<br>Snapshots: ${state.snapFiles.join(', ')}${state.live.syncErr ? ` · ${state.live.syncErr} trader(s) failed to sync this load` : ''}.`;
+  $('foot').innerHTML = `Copy Desk v${COPY_VER} · last sync: ${state.live.snapCount ?? 0} WebSocket snapshots, ${state.sync.rest || 0} REST gap-fill(s), socket ${state.live.ws || 'not open'} · seed ${COPY_SEED} · ${C_SEATS} copy bots (${Object.keys(G).length} genes: who / delay / consensus / slots / leverage / stop / exit) + ${C_BENCH}-bot bench · weekly evolution + roster re-freeze on Monday 00:00 UTC · leaders' fills from Hyperliquid's public API, bots priced on Binance USDT-M perps · paper only.<br>Snapshots: ${state.snapFiles.join(', ')}${state.live.syncErr ? ` · ${state.live.syncErr} trader(s) failed to sync this load` : ''}.`;
 }
 window.COPY = { state, replay: C_replay, score: C_score, desc: C_desc, exportFills() { const o = {}; for (const [a, arr] of state.fills) if (arr.length) o[a] = arr; return JSON.stringify(o); } };
 
@@ -560,7 +558,7 @@ const WS = { sock: null, pending: 0, timer: null, ping: null, lastMsg: 0, retrie
     sock.onclose = () => { this.sock = null; state.live.ws = 'closed'; clearInterval(this.ping); setConn(); const d = Math.min(60e3, 2000 * Math.pow(2, this.retries++)); setTimeout(() => this.start(), d); };
     sock.onerror = () => { try { sock.close(); } catch (e) {} };
   } };
-function setConn() { const dot = $('connDot'), txt = $('connTxt'); if (!dot || state.booting) return; dot.className = 'dot ok';
+function setConn() { const dot = $('connDot'), txt = $('connTxt'); if (!dot || state.booting || state.syncing) return; dot.className = 'dot ok';
   txt.textContent = (state.live.ws === 'open' ? 'Live · WebSocket push · ' : 'Live · polling · ') + new Date(state.lastRender || Date.now()).toISOString().slice(11, 19) + ' UTC'; }
 let refreshing = false;
 async function refresh(why) {
@@ -575,16 +573,16 @@ async function boot() {
   try {
     txt.textContent = 'Loading roster…';
     await loadRosters();
-    txt.textContent = 'Syncing fills…';
-    await syncFills(msg => { txt.textContent = 'Syncing · ' + msg; if ($('app').classList.contains('loading')) $('app').textContent = `Syncing fills from Hyperliquid — ${msg} (WebSocket snapshots first, REST only for gaps)…`; });
+    // v1.3: render immediately from the local cache, then sync in the background
+    const cached = await idb.get('fills');
+    if (cached && cached.d) { for (const [a, arr] of Object.entries(cached.d)) mergeFills(a, arr); state.live.cachedAt = cached.t; }
     buildEvents();
-    txt.textContent = 'Loading Binance 5m prices…';
+    txt.textContent = 'Loading Binance 1m prices…';
     await loadBars();
-    state.arena = C_replay();
-    state.lastRender = Date.now();
-    renderAll();
-    state.booting = false; setConn();
-    if (!WS.sock) WS.start();
+    state.arena = C_replay(); state.lastRender = Date.now(); renderAll();
+    state.booting = false;
+    txt.textContent = cached ? 'Cached view · syncing new fills…' : 'First load · syncing fills…';
+    syncFills(msg => { txt.textContent = 'Syncing · ' + msg; }).then(() => refresh('sync')).catch(e => { const b = $('errBanner'); b.className = 'banner warn'; b.textContent = 'Fill sync failed: ' + e.message; setConn(); });
   } catch (e) {
     state.booting = false;
     dot.className = 'dot err'; txt.textContent = 'Error';
