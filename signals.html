@@ -312,9 +312,18 @@ async function loadLive(merged) {
     }
   } catch (e) {
     rows = []; t = PRICE_FROM; priceSrc = 'Hyperliquid';
+    /* v1.2.1: Hyperliquid intermittently answers candleSnapshot with [] or a 429. One such blip used to kill the whole
+       page (2026-09-07 04:54 snapshot). Retry with backoff before giving up. */
+    const hlBars = async start => { let why = 'empty';
+      for (let a = 0; a < 3; a++) {
+        try { const r = await fetch('https://api.hyperliquid.xyz/info', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'candleSnapshot', req: { coin: 'BTC', interval: '1h', startTime: start, endTime: Date.now() } }) }).then(x => x.json());
+          if (Array.isArray(r) && r.length) return r; } catch (err) { why = err.message || String(err); }
+        await new Promise(z => setTimeout(z, 1500 * (a + 1)));
+      }
+      throw new Error('Hyperliquid candles unavailable after 3 tries (' + why + ')');
+    };
     for (let i = 0; i < 4; i++) {
-      const r = await fetch('https://api.hyperliquid.xyz/info', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'candleSnapshot', req: { coin: 'BTC', interval: '1h', startTime: t, endTime: Date.now() } }) }).then(x => x.json());
-      if (!Array.isArray(r) || !r.length) break;
+      const r = await hlBars(t);
       for (const k of r) if (!rows.length || k.t > rows[rows.length - 1][0]) rows.push([k.t, +k.o, +k.h, +k.l, +k.c]);
       if (r.length < 5000) break;
       t = r[r.length - 1].t + H1;
@@ -674,7 +683,7 @@ function renderAll() {
   if ($('app').classList.contains('loading')) { $('app').classList.remove('loading'); $('app').innerHTML = $('tpl').innerHTML; }
   renderBoard(); try { renderAttention(); } catch (e) { const el = $('attnNote'); if (el) el.textContent = 'Attention board failed: ' + e.message; }
   renderArena();
-  $('foot').innerHTML = `Signal Desk v1.2 · seed ${SIG_SEED} · ${S_KEYS.length} signal species + signal∧trend combos · ${S_SEATS} seats, ${S_BENCH}-bot bench · weekly evolution on Monday 00:00 UTC · paper only, no keys, no real funds.<br>Snapshots loaded: ${state.snapFiles.join(', ') || 'none'} · Binance keeps derivatives series for 30 days only, so history is preserved in weekly snapshot files inside the repo.`;
+  $('foot').innerHTML = `Signal Desk v1.2.1 · seed ${SIG_SEED} · ${S_KEYS.length} signal species + signal∧trend combos · ${S_SEATS} seats, ${S_BENCH}-bot bench · weekly evolution on Monday 00:00 UTC · paper only, no keys, no real funds.<br>Snapshots loaded: ${state.snapFiles.join(', ') || 'none'} · Binance keeps derivatives series for 30 days only, so history is preserved in weekly snapshot files inside the repo.`;
 }
 /* ---------- snapshot export (weekly: copies a compact JSON of the merged series to the clipboard) ---------- */
 window.SIG = { state, exportSnapshot() { const s = state.series; const c = { symbol: 'BTCUSDT', taken: Date.now(), period: '1h', oi: s.oi, ls: s.ls, top: s.top, tk: s.tk, funding: s.funding, fng: s.fng }; return JSON.stringify(c); }, replay: S_replay, score: S_score, pos: S_pos, blocks: S_BLOCKS };
