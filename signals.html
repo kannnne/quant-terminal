@@ -312,13 +312,18 @@ async function loadLive(merged) {
     }
   } catch (e) {
     rows = []; t = PRICE_FROM; priceSrc = 'Hyperliquid';
-    /* v1.2.1: Hyperliquid intermittently answers candleSnapshot with [] or a 429. One such blip used to kill the whole
-       page (2026-09-07 04:54 snapshot). Retry with backoff before giving up. */
+    /* v1.2.2: Hyperliquid answers candleSnapshot with [] or an error object when the caller is being rate-limited.
+       The snapshot runner loads Copy Desk (100 leader addresses) just before this page, which used up the IP's
+       Hyperliquid budget, so short retries all landed inside the same 1-minute window (2026-09-07 04:54 + 07:58).
+       Back off past that window, and report the real status/body instead of a bare "empty". */
     const hlBars = async start => { let why = 'empty';
       for (let a = 0; a < 3; a++) {
-        try { const r = await fetch('https://api.hyperliquid.xyz/info', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'candleSnapshot', req: { coin: 'BTC', interval: '1h', startTime: start, endTime: Date.now() } }) }).then(x => x.json());
-          if (Array.isArray(r) && r.length) return r; } catch (err) { why = err.message || String(err); }
-        await new Promise(z => setTimeout(z, 1500 * (a + 1)));
+        try { const res = await fetch('https://api.hyperliquid.xyz/info', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'candleSnapshot', req: { coin: 'BTC', interval: '1h', startTime: start, endTime: Date.now() } }) });
+          const txt = await res.text(); let r = null; try { r = JSON.parse(txt); } catch (pe) { r = null; }
+          if (Array.isArray(r) && r.length) return r;
+          why = 'HTTP ' + res.status + ' ' + txt.slice(0, 120);
+        } catch (err) { why = err.message || String(err); }
+        if (a < 2) await new Promise(z => setTimeout(z, a ? 40000 : 10000));
       }
       throw new Error('Hyperliquid candles unavailable after 3 tries (' + why + ')');
     };
@@ -683,7 +688,7 @@ function renderAll() {
   if ($('app').classList.contains('loading')) { $('app').classList.remove('loading'); $('app').innerHTML = $('tpl').innerHTML; }
   renderBoard(); try { renderAttention(); } catch (e) { const el = $('attnNote'); if (el) el.textContent = 'Attention board failed: ' + e.message; }
   renderArena();
-  $('foot').innerHTML = `Signal Desk v1.2.1 · seed ${SIG_SEED} · ${S_KEYS.length} signal species + signal∧trend combos · ${S_SEATS} seats, ${S_BENCH}-bot bench · weekly evolution on Monday 00:00 UTC · paper only, no keys, no real funds.<br>Snapshots loaded: ${state.snapFiles.join(', ') || 'none'} · Binance keeps derivatives series for 30 days only, so history is preserved in weekly snapshot files inside the repo.`;
+  $('foot').innerHTML = `Signal Desk v1.2.2 · seed ${SIG_SEED} · ${S_KEYS.length} signal species + signal∧trend combos · ${S_SEATS} seats, ${S_BENCH}-bot bench · weekly evolution on Monday 00:00 UTC · paper only, no keys, no real funds.<br>Snapshots loaded: ${state.snapFiles.join(', ') || 'none'} · Binance keeps derivatives series for 30 days only, so history is preserved in weekly snapshot files inside the repo.`;
 }
 /* ---------- snapshot export (weekly: copies a compact JSON of the merged series to the clipboard) ---------- */
 window.SIG = { state, exportSnapshot() { const s = state.series; const c = { symbol: 'BTCUSDT', taken: Date.now(), period: '1h', oi: s.oi, ls: s.ls, top: s.top, tk: s.tk, funding: s.funding, fng: s.fng }; return JSON.stringify(c); }, replay: S_replay, score: S_score, pos: S_pos, blocks: S_BLOCKS };
