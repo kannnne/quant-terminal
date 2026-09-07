@@ -124,7 +124,9 @@ async function snapRekt() {
   await page.close(); return d;
 }
 
-for (const [name, fn] of [['copy', snapCopy], ['signals', snapSignals], ['rekt', snapRekt]]) {
+// Signal Desk goes first on purpose: Copy Desk queries 100 Hyperliquid addresses and REKT Lab pulls 100+ candle
+// sets, which used up the runner IP's Hyperliquid rate budget and left Signal Desk's price fallback empty.
+for (const [name, fn] of [['signals', snapSignals], ['copy', snapCopy], ['rekt', snapRekt]]) {
   try { log('snapshot', name); out.pages[name] = await fn(); log(name, 'ok in', out.pages[name].loadMs, 'ms'); }
   catch (e) { log(name, 'FAILED', e.message); out.pages[name] = { error: String(e.message).slice(0, 300) }; }
 }
