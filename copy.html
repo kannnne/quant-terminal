@@ -248,7 +248,7 @@ const ROSTER_MONDAY0 = Date.UTC(2026, 8, 7);
 const G = { who: ['all', 'top10', 'top25', 'whales', 'steady', 'lowlev'], delay: [1, 5, 15], k: [1, 1, 2, 3], maxPos: [3, 5], lev: [1, 1, 2, 2, 3, 5], sl: [0, 0.03, 0.05, 0.10], exit: ['mirror', 'mirror', 'h4', 'h24', 'h72'] };
 const WHO_NM = { all: 'all 100', top10: 'top 10 by ROI', top25: 'top 25 by ROI', whales: '25 biggest accounts', steady: 'steady (win ≥55%, ≥20 closes)', lowlev: 'low leverage (≤5x)' };
 const CONSENSUS_WIN = 4 * H1;
-const COPY_VER = '2.0';
+const COPY_VER = '2.0.1';
 
 function C_rng(a) { return function() { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const pick = (rng, arr) => arr[Math.floor(rng() * arr.length) % arr.length];
@@ -562,7 +562,11 @@ function renderArena() {
     const st = x.s.inPos ? `<span class="pill" style="background:rgba(138,214,176,.16);color:var(--teal)">${x.s.open.map(o => (o.side === 1 ? 'L ' : 'S ') + o.coin).join(', ')}</span>` : '<span class="pill refp">FLAT</span>';
     return `<tr><td>${i + 1}</td><td><b>${x.g.id}</b></td><td class="rule">${C_desc(x.g)}</td><td class="${x.s.ret >= 0 ? 'up' : 'down'}"><b>$${fmtN(eq)}</b> (${x.s.ret >= 0 ? '+' : ''}${x.s.ret.toFixed(2)}%)</td><td><div class="hbar"><i style="left:0;width:${w}%;background:${x.s.ret >= 0 ? 'linear-gradient(90deg,#8fd694,#c9d64f)' : 'linear-gradient(90deg,#e0806e,#c96a5a)'}"></i></div></td><td>${x.s.trades}${x.s.liqs ? ` <span class="down">☠${x.s.liqs}</span>` : ''}</td><td>${st}</td></tr>`; }).join('');
   const avg = scored.reduce((s, x) => s + x.s.ret, 0) / scored.length, med = scored.map(x => x.s.ret).sort((p, q) => p - q)[Math.floor(scored.length / 2)];
-  $('arenaTag').textContent = `Gen ${a.gen} · ${a.deaths} retired · ${prof}/${C_SEATS} profitable · ${inPos}/${C_SEATS} in position · ${traded}/${C_SEATS} have traded · bench ${a.bench}`;
+  /* Long/short tilt of the whole arena. These bots mirror the leaders, so a one-sided board means the leaders are
+     one-sided — and a seat average earned while 90%+ long is a bet on direction, not evidence the genes work. */
+  let nL = 0, nS = 0; for (const x of scored) for (const o of x.s.open) (o.side === 1 ? nL++ : nS++);
+  const tilt = nL + nS ? ` · ${nL}L / ${nS}S open (${Math.round(nL / (nL + nS) * 100)}% long)` : '';
+  $('arenaTag').textContent = `Gen ${a.gen} · ${a.deaths} retired · ${prof}/${C_SEATS} profitable · ${inPos}/${C_SEATS} in position${tilt} · ${traded}/${C_SEATS} have traded · bench ${a.bench}`;
   $('arenaNote').textContent = `Forward-only since the first freeze (${new Date(a.start).toISOString().replace('T', ' ').slice(0, 16)} UTC). Seat average ${avg >= 0 ? '+' : ''}${avg.toFixed(2)}% · median ${med >= 0 ? '+' : ''}${med.toFixed(2)}% · priced on Hyperliquid 1-minute closes after the bot's own delay · leaders' fills arrive by WebSocket push · fee 0.07%/side + funding drag · liquidation on the wick · same money rules as the Arena.`;
   $('cArena').textContent = `Gen ${a.gen} · ${inPos}/${C_SEATS} in position`; $('cArenaD').textContent = scored.length ? `Leader ${scored[0].g.id} ${scored[0].s.ret >= 0 ? '+' : ''}${scored[0].s.ret.toFixed(2)}%` : '–';
   // standings by who / delay / exit

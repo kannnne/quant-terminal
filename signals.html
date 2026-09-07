@@ -657,7 +657,11 @@ function renderArena() {
     return `<tr><td>${i + 1}</td><td><b>${x.g.id}</b></td><td class="rule">${S_desc(x.g)}</td><td class="${x.s.ret >= 0 ? 'up' : 'down'}"><b>$${fmtN(eq)}</b> (${x.s.ret >= 0 ? '+' : ''}${x.s.ret.toFixed(2)}%)</td><td><div class="hbar"><i style="left:0;width:${w}%;background:${x.s.ret >= 0 ? 'linear-gradient(90deg,#8fd694,#c9d64f)' : 'linear-gradient(90deg,#e0806e,#c96a5a)'}"></i></div></td><td>${x.s.trades}${x.s.liqs ? ` <span class="down">☠${x.s.liqs}</span>` : ''}</td><td>${st}</td></tr>`; }).join('');
   const avg = scored.reduce((s, x) => s + x.s.ret, 0) / scored.length;
   const med = scored.map(x => x.s.ret).sort((p, q) => p - q)[Math.floor(scored.length / 2)];
-  $('arenaTag').textContent = `Gen ${a.gen} · ${a.deaths} retired · ${prof}/${S_SEATS} profitable · ${inPos}/${S_SEATS} in position · bench ${a.bench}`;
+  /* Long/short tilt of the whole arena. Half the bots are fade-mode mirrors of the other half, so a lopsided board
+     means the crowd signal itself is lopsided — a seat average earned that way is a bet on direction, not evidence. */
+  const nL = scored.filter(x => x.s.inPos && x.s.side === 1).length, nS = scored.filter(x => x.s.inPos && x.s.side === -1).length;
+  const tilt = nL + nS ? ` · ${nL}L / ${nS}S (${Math.round(nL / (nL + nS) * 100)}% long)` : '';
+  $('arenaTag').textContent = `Gen ${a.gen} · ${a.deaths} retired · ${prof}/${S_SEATS} profitable · ${inPos}/${S_SEATS} in position${tilt} · bench ${a.bench}`;
   $('arenaNote').textContent = `Forward-only since ${new Date(SIG_START).toISOString().slice(0, 10)} (each bot scored from its own birth). Seat average ${avg >= 0 ? '+' : ''}${avg.toFixed(2)}% · median ${med >= 0 ? '+' : ''}${med.toFixed(2)}% · 1h bars · fee 0.07%/side on notional + funding drag · liquidation on the wick. Same money rules as the main Arena, so results are comparable.`;
   $('cArena').textContent = `Gen ${a.gen} · ${inPos}/${S_SEATS} in position`;
   $('cArenaD').textContent = scored.length ? `Leader ${scored[0].g.id} ${scored[0].s.ret >= 0 ? '+' : ''}${scored[0].s.ret.toFixed(2)}%` : '–';
@@ -688,7 +692,7 @@ function renderAll() {
   if ($('app').classList.contains('loading')) { $('app').classList.remove('loading'); $('app').innerHTML = $('tpl').innerHTML; }
   renderBoard(); try { renderAttention(); } catch (e) { const el = $('attnNote'); if (el) el.textContent = 'Attention board failed: ' + e.message; }
   renderArena();
-  $('foot').innerHTML = `Signal Desk v1.2.2 · seed ${SIG_SEED} · ${S_KEYS.length} signal species + signal∧trend combos · ${S_SEATS} seats, ${S_BENCH}-bot bench · weekly evolution on Monday 00:00 UTC · paper only, no keys, no real funds.<br>Snapshots loaded: ${state.snapFiles.join(', ') || 'none'} · Binance keeps derivatives series for 30 days only, so history is preserved in weekly snapshot files inside the repo.`;
+  $('foot').innerHTML = `Signal Desk v1.2.3 · seed ${SIG_SEED} · ${S_KEYS.length} signal species + signal∧trend combos · ${S_SEATS} seats, ${S_BENCH}-bot bench · weekly evolution on Monday 00:00 UTC · paper only, no keys, no real funds.<br>Snapshots loaded: ${state.snapFiles.join(', ') || 'none'} · Binance keeps derivatives series for 30 days only, so history is preserved in weekly snapshot files inside the repo.`;
 }
 /* ---------- snapshot export (weekly: copies a compact JSON of the merged series to the clipboard) ---------- */
 window.SIG = { state, exportSnapshot() { const s = state.series; const c = { symbol: 'BTCUSDT', taken: Date.now(), period: '1h', oi: s.oi, ls: s.ls, top: s.top, tk: s.tk, funding: s.funding, fng: s.fng }; return JSON.stringify(c); }, replay: S_replay, score: S_score, pos: S_pos, blocks: S_BLOCKS };

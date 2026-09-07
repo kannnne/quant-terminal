@@ -231,7 +231,7 @@ const WARM = 3 * DAY;
 const REKT_SEED = 20260907;
 const R_SEATS = 100, R_KILL = 10, R_BENCH = 300, R_MUT = 4;
 const R_FEE = 0.0007, R_DEP = 1000, R_RUIN = 500, R_FUND_H = 0.0000125;
-const REKT_VER = '2.0';
+const REKT_VER = '2.0.1';
 /* v2: the universe is Hyperliquid's own perp list — exactly what REKT trades ("Hyperliquid perps for the universe", their rules page) — frozen
    weekly in data/hl-universe-<Monday>.json (sorted by 24h notional volume). Prices are Hyperliquid 5m candles, the same tape REKT marks on. */
 const UNI_FIRST = 'data/hl-universe-2026-09-06.json', UNI_MONDAY0 = Date.UTC(2026, 8, 7);
@@ -489,7 +489,11 @@ function renderArena() {
     const st = x.s.inPos ? `<span class="pill" style="background:rgba(138,214,176,.16);color:var(--teal)">${x.s.open.map(o => (o.side === 1 ? 'L ' : 'S ') + o.coin).join(', ')}</span>` : '<span class="pill refp">FLAT</span>';
     return `<tr><td>${i + 1}</td><td><b>${x.g.id}</b></td><td class="rule">${R_desc(x.g)}</td><td class="${x.s.ret >= 0 ? 'up' : 'down'}"><b>$${fmtN(eq)}</b> (${x.s.ret >= 0 ? '+' : ''}${x.s.ret.toFixed(2)}%)</td><td><div class="hbar"><i style="left:0;width:${w}%;background:${x.s.ret >= 0 ? 'linear-gradient(90deg,#8fd694,#c9d64f)' : 'linear-gradient(90deg,#e0806e,#c96a5a)'}"></i></div></td><td>${x.s.trades}${x.s.liqs ? ` <span class="down">☠${x.s.liqs}</span>` : ''}</td><td>${st}</td></tr>`; }).join('');
   const avg = scored.reduce((s, x) => s + x.s.ret, 0) / scored.length, med = scored.map(x => x.s.ret).sort((p, q) => p - q)[Math.floor(scored.length / 2)];
-  $('arenaTag').textContent = `Gen ${a.gen} · ${a.deaths} retired · ${prof}/${R_SEATS} profitable · ${inPos}/${R_SEATS} in position · bench ${a.bench}`;
+  /* Long/short tilt of the whole arena — a seat average earned while the board is 90%+ one way is a bet on
+     direction, not evidence the desks' methods work. */
+  let nL = 0, nS = 0; for (const x of scored) for (const o of x.s.open) (o.side === 1 ? nL++ : nS++);
+  const tilt = nL + nS ? ` · ${nL}L / ${nS}S open (${Math.round(nL / (nL + nS) * 100)}% long)` : '';
+  $('arenaTag').textContent = `Gen ${a.gen} · ${a.deaths} retired · ${prof}/${R_SEATS} profitable · ${inPos}/${R_SEATS} in position${tilt} · bench ${a.bench}`;
   $('arenaNote').textContent = `Forward-only since ${new Date(REKT_START).toISOString().slice(0, 10)} (REKT's own opening bell). Seat average ${avg >= 0 ? '+' : ''}${avg.toFixed(2)}% · median ${med >= 0 ? '+' : ''}${med.toFixed(2)}% · Hyperliquid 5m · fee 0.07%/side + funding drag · liquidation on the wick · no squeeze, leverage 1–10x by the desk's own dials.`;
   $('cArena').textContent = `Gen ${a.gen} · ${inPos}/${R_SEATS} in position`; $('cArenaD').textContent = `Leader ${scored[0].g.id} ${scored[0].s.ret >= 0 ? '+' : ''}${scored[0].s.ret.toFixed(2)}%`;
   // archetype standings, REKT-style

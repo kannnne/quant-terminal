@@ -1112,8 +1112,11 @@ function renderOverviewArena() {
   const scored = pool.map(g => ({ g, s: A_score(g, g.birth, now) }));
   scored.sort((a, b) => b.s.ret - a.s.ret || a.g.id.localeCompare(b.g.id));
   const liveN = scored.filter(x => x.s.inPos).length;
-  $("ovALoad").textContent = `Gen ${gen} · ${deaths} eliminated · ${liveN}/20 in position now`;
-  $("ovAGen").textContent = `Gen ${gen} · ${liveN}/20 in position`;
+  // Long/short tilt of the arena — a seat average earned while the board is one-sided is a bet on direction.
+  const nL = scored.filter(x => x.s.inPos && x.s.side === 1).length, nS = scored.filter(x => x.s.inPos && x.s.side === -1).length;
+  const tilt = nL + nS ? ` · ${nL}L / ${nS}S (${Math.round(nL / (nL + nS) * 100)}% long)` : "";
+  $("ovALoad").textContent = `Gen ${gen} · ${deaths} eliminated · ${liveN}/20 in position now${tilt}`;
+  $("ovAGen").textContent = `Gen ${gen} · ${liveN}/20 in position${tilt}`;
   $("ovATop").textContent = scored[0] ? `Leader ${scored[0].g.id} ${fmtP(scored[0].s.ret)}` : "–";
   renderArenaFeed(scored);
   $("ovTop5").innerHTML = scored.slice(0, 5).map((x, i) => {
