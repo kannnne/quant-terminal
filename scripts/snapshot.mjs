@@ -124,9 +124,15 @@ async function snapRekt() {
   await page.close(); return d;
 }
 
-// Signal Desk goes first on purpose: Copy Desk queries 100 Hyperliquid addresses and REKT Lab pulls 100+ candle
-// sets, which used up the runner IP's Hyperliquid rate budget and left Signal Desk's price fallback empty.
-for (const [name, fn] of [['signals', snapSignals], ['copy', snapCopy], ['rekt', snapRekt]]) {
+// Order matters twice over, and the two constraints pull against each other.
+//  1. Copy Desk MUST run before Signal Desk: it writes the leader-flow board into localStorage (shared ctx), and
+//     Signal Desk's attention x smart-money cross-check reads it from there. Putting Signal first on 2026-09-07
+//     silently emptied that board — all 30 rows came back "attention only".
+//  2. But Copy Desk's 100 leader-address queries drain the runner IP's Hyperliquid rate budget, which then starved
+//     Signal Desk's price fallback and killed the page outright (2026-09-07 04:54 and 07:58).
+// So: Copy, then a cooldown longer than Hyperliquid's 1-minute rate window, then Signal, then REKT.
+for (const [name, fn] of [['copy', snapCopy], ['signals', snapSignals], ['rekt', snapRekt]]) {
+  if (name === 'signals') { log('cooldown 75s to clear the Hyperliquid rate window'); await new Promise(r => setTimeout(r, 75e3)); }
   try { log('snapshot', name); out.pages[name] = await fn(); log(name, 'ok in', out.pages[name].loadMs, 'ms'); }
   catch (e) { log(name, 'FAILED', e.message); out.pages[name] = { error: String(e.message).slice(0, 300) }; }
 }
