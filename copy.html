@@ -248,7 +248,7 @@ const ROSTER_MONDAY0 = Date.UTC(2026, 8, 7);
 const G = { who: ['all', 'top10', 'top25', 'whales', 'steady', 'lowlev'], delay: [1, 5, 15], k: [1, 1, 2, 3], maxPos: [3, 5], lev: [1, 1, 2, 2, 3, 5], sl: [0, 0.03, 0.05, 0.10], exit: ['mirror', 'mirror', 'h4', 'h24', 'h72'] };
 const WHO_NM = { all: 'all 100', top10: 'top 10 by ROI', top25: 'top 25 by ROI', whales: '25 biggest accounts', steady: 'steady (win ≥55%, ≥20 closes)', lowlev: 'low leverage (≤5x)' };
 const CONSENSUS_WIN = 4 * H1;
-const COPY_VER = '2.1';
+const COPY_VER = '2.2';
 
 function C_rng(a) { return function() { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const pick = (rng, arr) => arr[Math.floor(rng() * arr.length) % arr.length];
@@ -592,32 +592,34 @@ function renderFeed(scored) {
   const n24 = rows.filter(x => x.ts >= Date.now() - DAY && x.act !== 'BORN' && x.act !== 'RETIRED').length;
   $('feedTag').textContent = `${rows.length} events · ${n24} bot trades in the last 24h`;
 }
-/* ---------- v2.1 heat board: every window-scoped column follows the selected window ----------
+/* ---------- v2.2 heat board: every window-scoped column follows the selected window ----------
    Kane, 2026-09-08: "24h is a bit delay for me to decide which tokens they are buying at the moment."
    So openers / long-short split / net flow / first touch / price move all follow state.heatWin (30m, 1h, 4h, 24h).
-   The 24h figures are still computed and still written to qt_leaderflow, so the Signal Desk cross-check is unchanged.
+   v2.2: ALL FOUR windows are accumulated in one pass and all four are published in qt_leaderflow, so the Signal
+   Desk can offer its own window selector instead of silently inheriting whichever button was last pressed here.
    Net is split in two: opens only (what they are putting on right now) and all fills (which includes closes, so a
    single big unwind can swamp the new positions — that is the ⚑ case the reports keep flagging). */
 const HEAT_WINS = [['30m', 1800e3], ['1h', H1], ['4h', 4 * H1], ['24h', DAY]];
+const HEAT_IDX = win => { const i = HEAT_WINS.findIndex(w => w[1] === win); return i < 0 ? HEAT_WINS.length - 1 : i; };
 function computeHeat(now, win) {
   now = now || Date.now(); win = win || state.heatWin || H1;
   const r = state.rosters[state.rosters.length - 1];
   const m = new Map();
-  const get = coin => { let h = m.get(coin); if (!h) { h = { coin, venue: venueOf(coin), s1: new Set(), s4: new Set(), s24: new Set(), long: new Set(), short: new Set(), buy: 0, sell: 0, first: new Set(), firstSeen: Infinity, n24: 0, sw: new Set(), lw: new Set(), shw: new Set(), fw: new Set(), obuy: 0, osell: 0, abuy: 0, asell: 0, nw: 0 }; m.set(coin, h); } return h; };
+  const mkW = () => HEAT_WINS.map(() => ({ s: new Set(), l: new Set(), sh: new Set(), f: new Set(), ob: 0, os: 0, ab: 0, as: 0, n: 0 }));
+  const get = coin => { let h = m.get(coin); if (!h) { h = { coin, venue: venueOf(coin), s1: new Set(), s4: new Set(), s24: new Set(), long: new Set(), short: new Set(), buy: 0, sell: 0, first: new Set(), firstSeen: Infinity, n24: 0, W: mkW() }; m.set(coin, h); } return h; };
   const firstSeenAll = new Map(); for (const e of state.events) if (!firstSeenAll.has(e.coin)) firstSeenAll.set(e.coin, e.t);
   for (const e of state.events) {
     const age = now - e.t; if (age > DAY || age < 0) continue;
     const h = get(e.coin); h.n24++; h.firstSeen = firstSeenAll.get(e.coin);
     const buying = (e.d === 'OL' || e.d === 'CS' || e.d === 'SL'), selling = (e.d === 'OS' || e.d === 'CL' || e.d === 'LS');
     if (buying) h.buy += e.notional; if (selling) h.sell += e.notional;
-    const inW = age <= win;
-    if (inW) { h.nw++; if (buying) h.abuy += e.notional; if (selling) h.asell += e.notional; }
-    if (e.open) {
-      h.s24.add(e.a); if (age <= 4 * H1) h.s4.add(e.a); if (age <= H1) h.s1.add(e.a);
-      (e.side === 1 ? h.long : h.short).add(e.a);
-      const t = r.byA.get(e.a); const fresh = !!(t && t.coins && !t.coins.includes(e.coin));
-      if (fresh) h.first.add(e.a);
-      if (inW) { h.sw.add(e.a); (e.side === 1 ? h.lw : h.shw).add(e.a); if (e.side === 1) h.obuy += e.notional; else h.osell += e.notional; if (fresh) h.fw.add(e.a); }
+    const t = r.byA.get(e.a); const fresh = !!(e.open && t && t.coins && !t.coins.includes(e.coin));
+    if (e.open) { h.s24.add(e.a); if (age <= 4 * H1) h.s4.add(e.a); if (age <= H1) h.s1.add(e.a); (e.side === 1 ? h.long : h.short).add(e.a); if (fresh) h.first.add(e.a); }
+    for (let k = 0; k < HEAT_WINS.length; k++) {
+      if (age > HEAT_WINS[k][1]) continue;
+      const b = h.W[k]; b.n++;
+      if (buying) b.ab += e.notional; if (selling) b.as += e.notional;
+      if (e.open) { b.s.add(e.a); (e.side === 1 ? b.l : b.sh).add(e.a); if (e.side === 1) b.ob += e.notional; else b.os += e.notional; if (fresh) b.f.add(e.a); }
     }
   }
   const earliest = state.events.length ? state.events[0].t : now;
@@ -625,11 +627,14 @@ function computeHeat(now, win) {
     let gi = Math.max(0, Math.floor((Math.floor((now - ago) / BAR) * BAR - state.grid[0]) / BAR));
     while (gi < d.c.length && !d.has[gi]) gi++;
     return gi < d.c.length && d.has[gi] ? d.c[gi] : null; };
-  const rows = [...m.values()].map(h => { const px = lastPx(h.coin); const p24 = pxAt(h.coin, DAY), pw = pxAt(h.coin, win);
+  const wi = HEAT_IDX(win);
+  const rows = [...m.values()].map(h => { const px = lastPx(h.coin); const p24 = pxAt(h.coin, DAY), pw = pxAt(h.coin, win); const B = h.W[wi];
     return { coin: h.coin, venue: h.venue, o1: h.s1.size, o4: h.s4.size, o24: h.s24.size, long24: h.long.size, short24: h.short.size,
       buy: h.buy, sell: h.sell, net: h.buy - h.sell, first24: h.first.size, n24: h.n24,
-      ow: h.sw.size, longW: h.lw.size, shortW: h.shw.size, firstW: h.fw.size, nw: h.nw,
-      netOpenW: h.obuy - h.osell, netAllW: h.abuy - h.asell,
+      ow: B.s.size, longW: B.l.size, shortW: B.sh.size, firstW: B.f.size, nw: B.n,
+      netOpenW: B.ob - B.os, netAllW: B.ab - B.as,
+      // every window, for other pages: [windowMs, openers, longs, shorts, netOpen, netAll, firstTouch]
+      w: h.W.map((b, k) => [HEAT_WINS[k][1], b.s.size, b.l.size, b.sh.size, Math.round(b.ob - b.os), Math.round(b.ab - b.as), b.f.size]),
       newOnTape: h.firstSeen > now - DAY && h.firstSeen > earliest + DAY,
       px24: px && p24 ? (px / p24 - 1) * 100 : null, pxW: px && pw ? (px / pw - 1) * 100 : null,
       copyable: h.venue !== 'spot' }; });
@@ -651,7 +656,7 @@ function renderHeat() {
   const active = rows.filter(x => x.ow > 0).length, hot = rows.filter(x => x.o4 >= 3).length, fresh = rows.filter(x => x.newOnTape).length;
   $('heatTag').textContent = `${active} market(s) with an opening in the last ${wLbl} · ${rows.length} touched in 24h · ${hot} with ≥3 leaders opening in 4h · ${fresh} new on the tape`;
   $('heatNote').textContent = `Openers, long/short, new-position net, first touch and price all follow the ${wLbl} window selected above; the last column is the 24h opener count, kept as a reference so a quiet ${wLbl} is not mistaken for a quiet day. Rows with no opening in the window are dimmed. New-position net = notional opened long minus opened short (opens only) — what the leaders are putting on right now. Net incl. closes also counts exits, so when the two disagree, new positions are being opened while larger old ones are being closed. Leaders = distinct roster addresses. First touch = a leader opening a market that is not among their own 30-day top coins at freeze. Spot markets are shown for information; bots copy perps and HIP-3 perps only. The Signal Desk cross-check always reads the 24h figures, whichever window is selected here.`;
-  try { localStorage.setItem('qt_leaderflow', JSON.stringify({ t: Date.now(), roster: state.rosters[state.rosters.length - 1].frozen, win, rows: rows.slice(0, 60).map(x => ({ coin: x.coin, venue: x.venue, o1: x.o1, o4: x.o4, o24: x.o24, long24: x.long24, short24: x.short24, net: Math.round(x.net), first24: x.first24, newOnTape: x.newOnTape, px24: x.px24 == null ? null : +x.px24.toFixed(2), ow: x.ow, longW: x.longW, shortW: x.shortW, netOpenW: Math.round(x.netOpenW), netAllW: Math.round(x.netAllW) })) })); } catch (e) {}
+  try { localStorage.setItem('qt_leaderflow', JSON.stringify({ t: Date.now(), roster: state.rosters[state.rosters.length - 1].frozen, win, rows: rows.slice(0, 60).map(x => ({ coin: x.coin, venue: x.venue, o1: x.o1, o4: x.o4, o24: x.o24, long24: x.long24, short24: x.short24, net: Math.round(x.net), first24: x.first24, newOnTape: x.newOnTape, px24: x.px24 == null ? null : +x.px24.toFixed(2), ow: x.ow, longW: x.longW, shortW: x.shortW, netOpenW: Math.round(x.netOpenW), netAllW: Math.round(x.netAllW), w: x.w })) })); } catch (e) {}
 }
 function renderAll() {
   if ($('app').classList.contains('loading')) { $('app').classList.remove('loading'); $('app').innerHTML = $('tpl').innerHTML; $('rosterMore').addEventListener('click', () => { state.showAll = !state.showAll; renderRoster(); });
