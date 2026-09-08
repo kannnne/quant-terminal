@@ -624,13 +624,23 @@ function renderBoard() {
   $('cSentD').textContent = fgLbl;
 }
 /* ---------- attention vs smart money: social trending (CoinGecko / DEXScreener / GeckoTerminal) crossed with the Copy Desk leader-flow board ----------
-   v1.3 (2026-09-08, Kane's ask): the smart-money half now follows a 30m / 1h / 4h / 24h window, read from the four
-   windows Copy Desk v2.2 publishes in qt_leaderflow. The ATTENTION half has no window and never will — CoinGecko,
-   DEXScreener and GeckoTerminal only answer "what is trending right now", there is no history to slice. Default is
-   24h so the board stays a discovery filter and the twice-daily report keeps comparing like with like.
-   Consensus is judged on NEW-POSITION net (opens only), not the all-fills net: "they are buying it" should mean
-   "they are opening longs", not "a big old short got closed". */
-const normSym = s => String(s || '').toUpperCase().replace(/^\$/, '').replace(/^K(?=[A-Z]{3,})/, '');   // Hyperliquid kPEPE -> PEPE
+   v1.3 (2026-09-08): the smart-money half follows a 30m / 1h / 4h / 24h window from the four windows Copy Desk v2.2
+   publishes in qt_leaderflow. The ATTENTION half has no window and never will — CoinGecko, DEXScreener and
+   GeckoTerminal only answer "what is trending right now". Default 24h so the report keeps comparing like with like.
+   Consensus is judged on NEW-POSITION net (opens only): "they are buying it" should mean "they are opening longs".
+
+   v1.4 (2026-09-08, Kane found it): TICKERS ARE NOT IDENTITIES. The board used to key every source by bare symbol,
+   so CoinGecko's BTC ("Bitcoin", mcap #1, -1.6%) and a DEXScreener-boosted Solana token also called BTC
+   ("Buy The Cat", $3.3M mcap, +74.6%) merged into ONE row — which then inherited Bitcoin's rank, the meme's name
+   and price move, and the real Hyperliquid BTC perp flow. A $3M Solana meme was being presented as the number-one
+   asset with institutional flow behind it. Two fixes:
+     1. On-chain tokens are keyed by symbol@chain and never merge with a CoinGecko entry or with another chain.
+     2. Only CoinGecko entries are crossed with Hyperliquid leader flow. An on-chain token sharing a perp's ticker
+        proves nothing — tickers are squatted constantly — so those rows show their own chain data and say so.
+   Where a ticker is claimed by more than one asset, every row for it carries a warning naming the other claimants.
+   Also fixed here: normSym stripped a leading K from any symbol (KAVA -> AVA, KAITO -> AITO). The rule exists for
+   Hyperliquid's kPEPE / kBONK convention, which is a LOWERCASE k, so it is now tested before upper-casing. */
+const normSym = s => { const raw = String(s || '').trim().replace(/^\$/, ''); return (/^k[A-Z]{3,}$/.test(raw) ? raw.slice(1) : raw).toUpperCase(); };
 const ATT_WINS = [['30m', 1800e3], ['1h', H1], ['4h', 4 * H1], ['24h', DAY]];
 const ATT_MIN = { 1800000: 1, 3600000: 1, 14400000: 2, 86400000: 2 };     // openers needed before we call it consensus
 const ATT_QUIET = { 1800000: 1, 3600000: 2, 14400000: 3, 86400000: 5 };   // openers needed for "quiet accumulation"
@@ -642,31 +652,55 @@ function attFlow(r, win) {
 function renderAttention() {
   const win = state.attnWin || (state.attnWin = DAY);
   const wLbl = (ATT_WINS.find(w => w[1] === win) || ['24h'])[0];
-  const lv = state.live; const att = new Map();   // sym -> {sym, src: Set, chg, name, rank}
-  const add = (sym, src, extra) => { const k = normSym(sym); if (!k || k.length > 12) return; const a = att.get(k) || { sym: k, src: new Set(), chg: null, name: '', rank: null, mcap: null }; a.src.add(src); Object.assign(a, Object.fromEntries(Object.entries(extra || {}).filter(([, v]) => v != null && v === v))); att.set(k, a); };
-  if (lv.trend && lv.trend.coins) lv.trend.coins.forEach((c, i) => add(c.item.symbol, `CoinGecko #${i + 1}`, { name: c.item.name, rank: c.item.market_cap_rank, chg: c.item.data && c.item.data.price_change_percentage_24h && c.item.data.price_change_percentage_24h.usd }));
-  if (lv.dexTokens) lv.dexTokens.forEach(t => add(t.sym, `DEX boost · ${t.chain}`, { name: t.name, chg: t.chg, mcap: t.mcap }));
-  if (lv.gtTrend && lv.gtTrend.data) { const inc = new Map((lv.gtTrend.included || []).map(x => [x.id, x])); lv.gtTrend.data.forEach((p, i) => { const rel = p.relationships && p.relationships.base_token && p.relationships.base_token.data; const tok = rel && inc.get(rel.id); const sym = tok && tok.attributes && tok.attributes.symbol; const chg = p.attributes && p.attributes.price_change_percentage && +p.attributes.price_change_percentage.h24; if (sym) add(sym, `GeckoTerminal pool #${i + 1}`, { chg }); }); }
+  const lv = state.live; const att = new Map();   // key -> entry ; key is SYM for CoinGecko, SYM@chain on-chain
+  const add = (sym, chain, src, extra) => { const k = normSym(sym); if (!k || k.length > 12) return;
+    const key = chain ? k + '@' + chain : k;
+    const a = att.get(key) || { key, sym: k, chain: chain || null, src: new Set(), chg: null, name: '', rank: null, mcap: null };
+    a.src.add(src); Object.assign(a, Object.fromEntries(Object.entries(extra || {}).filter(([, v]) => v != null && v === v))); att.set(key, a); };
+  if (lv.trend && lv.trend.coins) lv.trend.coins.forEach((c, i) => add(c.item.symbol, null, `CoinGecko #${i + 1}`, { name: c.item.name, rank: c.item.market_cap_rank, chg: c.item.data && c.item.data.price_change_percentage_24h && c.item.data.price_change_percentage_24h.usd }));
+  if (lv.dexTokens) lv.dexTokens.forEach(t => add(t.sym, t.chain || 'chain', `DEX boost`, { name: t.name, chg: t.chg, mcap: t.mcap }));
+  if (lv.gtTrend && lv.gtTrend.data) { const inc = new Map((lv.gtTrend.included || []).map(x => [x.id, x])); lv.gtTrend.data.forEach((p, i) => { const rel = p.relationships && p.relationships.base_token && p.relationships.base_token.data; const tok = rel && inc.get(rel.id); const sym = tok && tok.attributes && tok.attributes.symbol; const net = (p.relationships && p.relationships.network && p.relationships.network.data && p.relationships.network.data.id) || String(p.id || '').split('_')[0] || 'chain'; const chg = p.attributes && p.attributes.price_change_percentage && +p.attributes.price_change_percentage.h24; if (sym) add(sym, net, `GeckoTerminal pool #${i + 1}`, { chg, name: tok.attributes.name }); }); }
+  /* Same ticker, same NAME = the same asset seen on two sources (CoinGecko lists Pons; its pool trades on the
+     Robinhood chain). Fold those back together so the legitimate case is not split. Same ticker, different name
+     is the dangerous case (Bitcoin vs "Buy The Cat" on Solana) and stays split and flagged. */
+  const nname = x => String(x || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  for (const a of [...att.values()]) { if (!a.chain) continue; const cg = att.get(a.sym);
+    if (cg && !cg.chain && nname(a.name) && nname(a.name) === nname(cg.name)) {
+      for (const src of a.src) cg.src.add(src + ' · ' + a.chain);
+      if (cg.mcap == null && a.mcap != null) cg.mcap = a.mcap;
+      att.delete(a.key);
+    } }
+  // whatever still shares a ticker after that is a genuine collision — say so on every row that claims it
+  const claims = new Map(); for (const a of att.values()) { const l = claims.get(a.sym) || []; l.push(a); claims.set(a.sym, l); }
+  const label = a => '"' + (a.name || a.sym) + '"' + (a.chain ? ' on ' + a.chain : a.rank ? ' (mcap #' + a.rank + ')' : '');
+  for (const [, list] of claims) if (list.length > 1) for (const a of list) a.dup = list.filter(x => x !== a).map(label);
   let lf = null; try { lf = JSON.parse(localStorage.getItem('qt_leaderflow') || 'null'); } catch (e) {}
   const flow = new Map(); if (lf && lf.rows) for (const r of lf.rows) flow.set(normSym(r.coin), r);
   const stale = !lf || Date.now() - lf.t > 2 * H1;
   const legacy = !!(lf && lf.rows && lf.rows.length && !lf.rows[0].w);
   const minC = ATT_MIN[win] || 2, minQ = ATT_QUIET[win] || 5;
   const rows = [];
-  for (const a of att.values()) { const f = attFlow(flow.get(a.sym), win);
-    rows.push({ ...a, f, kind: f && f.ow ? (f.ow >= minC && f.netOpen > 0 ? 'buy' : f.ow >= minC && f.netOpen < 0 ? 'sell' : 'touch') : 'none' }); }
-  for (const raw of flow.values()) { const sym = normSym(raw.coin); if (att.has(sym)) continue; const f = attFlow(raw, win); if (f && f.ow >= minQ && f.netOpen > 0) rows.push({ sym, src: new Set(), chg: raw.px24, f, kind: 'quiet' }); }
-  const order = { buy: 0, sell: 1, quiet: 2, touch: 3, none: 4 };
-  rows.sort((p, q) => order[p.kind] - order[q.kind] || (q.f ? q.f.ow : 0) - (p.f ? p.f.ow : 0) || q.src.size - p.src.size);
-  const READ = { buy: ['up', `Hot AND the top 100 are opening longs in the last ${wLbl} — the only combination worth a closer look`], sell: ['down', `Hot but the top 100 are opening shorts in the last ${wLbl} — crowd buying, smart money fading`], quiet: ['', `<span style="color:var(--gold)">Quiet accumulation</span> — leaders piling in over the last ${wLbl}, no social attention yet`], touch: ['', `Hot; a leader touched it in the last ${wLbl}, no consensus`], none: ['', `Hot on socials, not one of the top 100 has opened it in the last ${wLbl}`] };
+  for (const a of att.values()) {
+    if (a.chain) { rows.push({ ...a, f: null, kind: 'chain' }); continue; }        // on-chain token: never inherits a perp's flow
+    const f = attFlow(flow.get(a.sym), win);
+    rows.push({ ...a, f, kind: f && f.ow ? (f.ow >= minC && f.netOpen > 0 ? 'buy' : f.ow >= minC && f.netOpen < 0 ? 'sell' : 'touch') : 'none' });
+  }
+  const cgSyms = new Set([...att.values()].filter(a => !a.chain).map(a => a.sym));
+  for (const raw of flow.values()) { const sym = normSym(raw.coin); if (cgSyms.has(sym)) continue; const f = attFlow(raw, win); if (f && f.ow >= minQ && f.netOpen > 0) rows.push({ sym, src: new Set(), chg: raw.px24, f, kind: 'quiet' }); }
+  const order = { buy: 0, sell: 1, quiet: 2, touch: 3, none: 4, chain: 5 };
+  rows.sort((p, q) => order[p.kind] - order[q.kind] || (q.f ? q.f.ow : 0) - (p.f ? p.f.ow : 0) || Math.abs(q.chg || 0) - Math.abs(p.chg || 0));
+  const READ = { buy: ['up', `Hot AND the top 100 are opening longs in the last ${wLbl} — the only combination worth a closer look`], sell: ['down', `Hot but the top 100 are opening shorts in the last ${wLbl} — crowd buying, smart money fading`], quiet: ['', `<span style="color:var(--gold)">Quiet accumulation</span> — leaders piling in over the last ${wLbl}, no social attention yet`], touch: ['', `Hot; a leader touched it in the last ${wLbl}, no consensus`], none: ['', `Hot on socials, not one of the top 100 has opened it in the last ${wLbl}`], chain: ['', `On-chain token — matched to no Hyperliquid perp. A ticker on a DEX proves nothing about the perp of the same name, so no leader flow is attributed here.`] };
   const usd = v => (v >= 0 ? '+$' : '-$') + (Math.abs(v) >= 1e6 ? (Math.abs(v) / 1e6).toFixed(2) + 'M' : (Math.abs(v) / 1e3).toFixed(0) + 'k');
+  const mc = v => v >= 1e9 ? '$' + (v / 1e9).toFixed(2) + 'B' : v >= 1e6 ? '$' + (v / 1e6).toFixed(1) + 'M' : '$' + (v / 1e3).toFixed(0) + 'k';
   $('attnWin').innerHTML = ATT_WINS.map(([t, ms]) => `<button data-w="${ms}" style="border:none;cursor:pointer;font:inherit;font-size:10px;font-weight:650;padding:2px 9px;margin-left:4px;border-radius:999px;background:${ms === win ? 'linear-gradient(135deg,#93ce93,#5da96f)' : 'rgba(255,255,255,.08)'};color:${ms === win ? '#0c130d' : 'var(--ink-2)'}">${t}</button>`).join('');
   $('attn').innerHTML = rows.slice(0, 30).map((r, i) => { const [cls, txt] = READ[r.kind]; const f = r.f;
-    return `<tr><td>${i + 1}</td><td style="text-align:left"><b>${r.sym}</b>${r.name ? ` <span style="color:var(--muted)">${r.name}</span>` : ''}${r.rank ? ` <span class="pill refp" style="font-size:9px;padding:1px 6px">mcap #${r.rank}</span>` : ''}</td><td style="text-align:left;color:var(--muted);white-space:normal;max-width:260px">${[...r.src].join(' · ') || '–'}</td><td class="${r.chg == null ? '' : r.chg >= 0 ? 'up' : 'down'}">${r.chg == null ? '–' : (r.chg >= 0 ? '+' : '') + (+r.chg).toFixed(1) + '%'}</td><td>${f && f.ow ? `<b>${f.ow}</b>` : '–'}</td><td>${f && f.ow ? `<span class="up">${f.l}L</span> / <span class="down">${f.s}S</span>` : '–'}</td><td class="${f && f.netOpen >= 0 ? 'up' : 'down'}">${f && f.ow ? usd(f.netOpen) : '–'}</td><td class="${f && f.netAll >= 0 ? 'up' : 'down'}" style="font-size:11px">${f && (f.ow || f.netAll) ? usd(f.netAll) : '–'}</td><td>${f && f.first ? `<span class="pill goldp">${f.first}</span>` : '–'}</td><td style="text-align:left;white-space:normal;min-width:220px" class="${cls}">${txt}</td></tr>`; }).join('') || '<tr><td colspan="10" style="color:var(--muted);text-align:center;padding:14px">No trending data loaded.</td></tr>';
-  const nHot = att.size, nBuy = rows.filter(r => r.kind === 'buy').length, nSell = rows.filter(r => r.kind === 'sell').length, nQuiet = rows.filter(r => r.kind === 'quiet').length;
-  const perWin = ATT_WINS.map(([lbl, ms]) => { const mc = ATT_MIN[ms] || 2; let n = 0; for (const a of att.values()) { const f = attFlow(flow.get(a.sym), ms); if (f && f.ow >= mc && f.netOpen > 0) n++; } return `${lbl} ${n}`; }).join(' · ');
-  $('attnTag').textContent = `${nHot} tokens trending · in the last ${wLbl}: ${nBuy} with smart-money buying, ${nSell} being faded, ${nQuiet} quiet accumulation · crosses by window: ${perWin}${stale ? ' · leader flow ' + (lf ? 'is ' + Math.round((Date.now() - lf.t) / 60e3) + ' min old' : 'missing') : ''}`;
-  $('attnNote').innerHTML = `Attention = CoinGecko trending search, DEXScreener boosted tokens (resolved to symbols) and GeckoTerminal trending pools, <b>live and with no history</b> — those APIs only answer "what is trending right now", so the window above applies to the smart-money half only. Smart money = the Copy Desk's leader-flow board for the selected ${wLbl} window: distinct Hyperliquid top-100 addresses <b>opening</b> a market, their long/short split, notional opened long minus opened short (new-position net), the same figure including closes, and first-touch count${lf ? `, last refreshed ${new Date(lf.t).toISOString().replace('T', ' ').slice(0, 16)} UTC` : ''}. Consensus needs ${minC} opener(s) at ${wLbl}; quiet accumulation needs ${minQ}. ${legacy ? '<b>The Copy Desk tab is still on an older version — only the 24h window has data.</b> ' : ''}${stale ? '<b>Open the Copy Desk tab once so the leader-flow board refreshes</b> — this page only reads what that page wrote. ' : ''}Short windows are sparse by construction: across all 100 leaders only a handful of markets see any opening in half an hour, so a single fill can decide a row. A token can only be matched when it also trades as a Hyperliquid perp; memecoins that exist only on-chain show as "attention only". This is a discovery filter, not a signal: a 100x candidate is by definition a token most holders lose everything on — the only thing this board can do is separate crowd-only hype from names where the people with the best 30-day records are actually positioned.`;
+    const warn = r.dup ? `<span style="color:var(--gold)">⚠ this ticker is also used by ${r.dup.join(', ')} — treat them as different assets unless you have checked otherwise.</span> ` : '';
+    const tag = r.chain ? `<span class="pill goldp" style="font-size:9px;padding:1px 6px">${r.chain}</span>${r.mcap ? ` <span class="pill refp" style="font-size:9px;padding:1px 6px">${mc(r.mcap)}</span>` : ''}` : (r.rank ? `<span class="pill refp" style="font-size:9px;padding:1px 6px">mcap #${r.rank}</span>` : '');
+    return `<tr><td>${i + 1}</td><td style="text-align:left"><b>${r.sym}</b>${r.name ? ` <span style="color:var(--muted)">${r.name}</span>` : ''} ${tag}</td><td style="text-align:left;color:var(--muted);white-space:normal;max-width:240px">${[...r.src].join(' · ') || '–'}</td><td class="${r.chg == null ? '' : r.chg >= 0 ? 'up' : 'down'}">${r.chg == null ? '–' : (r.chg >= 0 ? '+' : '') + (+r.chg).toFixed(1) + '%'}</td><td>${f && f.ow ? `<b>${f.ow}</b>` : '–'}</td><td>${f && f.ow ? `<span class="up">${f.l}L</span> / <span class="down">${f.s}S</span>` : '–'}</td><td class="${f && f.netOpen >= 0 ? 'up' : 'down'}">${f && f.ow ? usd(f.netOpen) : '–'}</td><td class="${f && f.netAll >= 0 ? 'up' : 'down'}" style="font-size:11px">${f && (f.ow || f.netAll) ? usd(f.netAll) : '–'}</td><td>${f && f.first ? `<span class="pill goldp">${f.first}</span>` : '–'}</td><td style="text-align:left;white-space:normal;min-width:230px" class="${cls}">${warn}${txt}</td></tr>`; }).join('') || '<tr><td colspan="10" style="color:var(--muted);text-align:center;padding:14px">No trending data loaded.</td></tr>';
+  const nHot = att.size, nBuy = rows.filter(r => r.kind === 'buy').length, nSell = rows.filter(r => r.kind === 'sell').length, nQuiet = rows.filter(r => r.kind === 'quiet').length, nChain = rows.filter(r => r.kind === 'chain').length, nDup = rows.filter(r => r.dup).length;
+  const perWin = ATT_WINS.map(([lbl, ms]) => { const mn = ATT_MIN[ms] || 2; let n = 0; for (const a of att.values()) { if (a.chain) continue; const f = attFlow(flow.get(a.sym), ms); if (f && f.ow >= mn && f.netOpen > 0) n++; } return `${lbl} ${n}`; }).join(' · ');
+  $('attnTag').textContent = `${nHot} tokens trending (${nChain} on-chain only) · in the last ${wLbl}: ${nBuy} with smart-money buying, ${nSell} being faded, ${nQuiet} quiet accumulation · crosses by window: ${perWin}${nDup ? ` · ${nDup} contested ticker(s)` : ''}${stale ? ' · leader flow ' + (lf ? 'is ' + Math.round((Date.now() - lf.t) / 60e3) + ' min old' : 'missing') : ''}`;
+  $('attnNote').innerHTML = `Attention = CoinGecko trending search, DEXScreener boosted tokens and GeckoTerminal trending pools, <b>live and with no history</b> — those APIs only answer "what is trending right now", so the window above applies to the smart-money half only. <b>A ticker is not an identity:</b> on-chain tokens are listed separately per chain and are never merged with a CoinGecko asset of the same name, and <b>only CoinGecko entries are crossed with Hyperliquid leader flow</b> — a DEX token borrowing a perp's ticker proves nothing (a Solana meme called "BTC" is not Bitcoin). Contested tickers are flagged on every row that claims them. Smart money = the Copy Desk's leader-flow board for the selected ${wLbl} window: distinct Hyperliquid top-100 addresses <b>opening</b> a market, their long/short split, notional opened long minus opened short (new-position net), the same figure including closes, and first-touch count${lf ? `, last refreshed ${new Date(lf.t).toISOString().replace('T', ' ').slice(0, 16)} UTC` : ''}. Consensus needs ${minC} opener(s) at ${wLbl}; quiet accumulation needs ${minQ}. ${legacy ? '<b>The Copy Desk tab is still on an older version — only the 24h window has data.</b> ' : ''}${stale ? '<b>Open the Copy Desk tab once so the leader-flow board refreshes</b> — this page only reads what that page wrote. ' : ''}Short windows are sparse by construction: across all 100 leaders only a handful of markets see any opening in half an hour, so a single fill can decide a row. This is a discovery filter, not a signal: a 100x candidate is by definition a token most holders lose everything on — the only thing this board can do is separate crowd-only hype from names where the people with the best 30-day records are actually positioned.`;
 }
 function renderArena() {
   const a = state.arena, scored = a.pool.map(g => ({ g, s: S_score(g, g.birth, a.now) })).sort((x, y) => y.s.ret - x.s.ret || x.g.id.localeCompare(y.g.id));
@@ -714,7 +748,7 @@ function renderAll() {
   renderBoard(); try { renderAttention(); } catch (e) { const el = $('attnNote'); if (el) el.textContent = 'Attention board failed: ' + e.message; }
   const aw = $('attnWin'); if (aw && !aw.dataset.bound) { aw.dataset.bound = '1'; aw.addEventListener('click', e => { const b = e.target.closest('button[data-w]'); if (!b) return; state.attnWin = +b.dataset.w; try { renderAttention(); } catch (err) {} }); }
   renderArena();
-  $('foot').innerHTML = `Signal Desk v1.3 · seed ${SIG_SEED} · ${S_KEYS.length} signal species + signal∧trend combos · ${S_SEATS} seats, ${S_BENCH}-bot bench · weekly evolution on Monday 00:00 UTC · paper only, no keys, no real funds.<br>Snapshots loaded: ${state.snapFiles.join(', ') || 'none'} · Binance keeps derivatives series for 30 days only, so history is preserved in weekly snapshot files inside the repo.`;
+  $('foot').innerHTML = `Signal Desk v1.4 · seed ${SIG_SEED} · ${S_KEYS.length} signal species + signal∧trend combos · ${S_SEATS} seats, ${S_BENCH}-bot bench · weekly evolution on Monday 00:00 UTC · paper only, no keys, no real funds.<br>Snapshots loaded: ${state.snapFiles.join(', ') || 'none'} · Binance keeps derivatives series for 30 days only, so history is preserved in weekly snapshot files inside the repo.`;
 }
 /* ---------- snapshot export (weekly: copies a compact JSON of the merged series to the clipboard) ---------- */
 window.SIG = { state, exportSnapshot() { const s = state.series; const c = { symbol: 'BTCUSDT', taken: Date.now(), period: '1h', oi: s.oi, ls: s.ls, top: s.top, tk: s.tk, funding: s.funding, fng: s.fng }; return JSON.stringify(c); }, replay: S_replay, score: S_score, pos: S_pos, blocks: S_BLOCKS };
