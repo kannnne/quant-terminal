@@ -200,10 +200,10 @@
   </div>
 
   <div class="card g-green">
-    <h2>Attention vs smart money · what X is talking about vs what the Hyperliquid top 100 are actually buying <span class="tag" id="attnTag">–</span>
+    <h2>Attention vs smart money · what X is talking about vs what the Hyperliquid top 100 are actually buying <span id="attnWin"></span> <span class="tag" id="attnTag">–</span>
       <span class="legend"><span><i style="background:var(--green)"></i>hot + smart money buying</span><span><i style="background:var(--red)"></i>hot + smart money selling</span><span><i style="background:var(--gold)"></i>quiet accumulation</span></span></h2>
     <div style="overflow-x:auto"><table>
-      <thead><tr><th>#</th><th style="text-align:left">Token</th><th style="text-align:left">Attention (where it is trending)</th><th>24h</th><th>Leaders 4h</th><th>Leaders 24h</th><th>Net flow 24h</th><th>First touch</th><th style="text-align:left">Read</th></tr></thead>
+      <thead><tr><th>#</th><th style="text-align:left">Token</th><th style="text-align:left">Attention (where it is trending)</th><th>24h</th><th>Openers</th><th>Long / Short</th><th>New-position net</th><th>Net incl. closes</th><th>First touch</th><th style="text-align:left">Read</th></tr></thead>
       <tbody id="attn"></tbody></table></div>
     <div style="font-size:10.5px;color:var(--muted);margin-top:8px" id="attnNote">–</div>
   </div>
@@ -623,9 +623,25 @@ function renderBoard() {
   $('cSent').innerHTML = `<span class="${sent >= 70 ? 'down' : sent <= 30 ? 'up' : ''}">${sent.toFixed(0)}</span> <small style="font-size:11px;color:var(--muted)">/100</small>`;
   $('cSentD').textContent = fgLbl;
 }
-/* ---------- attention vs smart money: social trending (CoinGecko / DEXScreener / GeckoTerminal) crossed with the Copy Desk leader-flow board ---------- */
+/* ---------- attention vs smart money: social trending (CoinGecko / DEXScreener / GeckoTerminal) crossed with the Copy Desk leader-flow board ----------
+   v1.3 (2026-09-08, Kane's ask): the smart-money half now follows a 30m / 1h / 4h / 24h window, read from the four
+   windows Copy Desk v2.2 publishes in qt_leaderflow. The ATTENTION half has no window and never will — CoinGecko,
+   DEXScreener and GeckoTerminal only answer "what is trending right now", there is no history to slice. Default is
+   24h so the board stays a discovery filter and the twice-daily report keeps comparing like with like.
+   Consensus is judged on NEW-POSITION net (opens only), not the all-fills net: "they are buying it" should mean
+   "they are opening longs", not "a big old short got closed". */
 const normSym = s => String(s || '').toUpperCase().replace(/^\$/, '').replace(/^K(?=[A-Z]{3,})/, '');   // Hyperliquid kPEPE -> PEPE
+const ATT_WINS = [['30m', 1800e3], ['1h', H1], ['4h', 4 * H1], ['24h', DAY]];
+const ATT_MIN = { 1800000: 1, 3600000: 1, 14400000: 2, 86400000: 2 };     // openers needed before we call it consensus
+const ATT_QUIET = { 1800000: 1, 3600000: 2, 14400000: 3, 86400000: 5 };   // openers needed for "quiet accumulation"
+function attFlow(r, win) {
+  if (r && r.w) { const e = r.w.find(x => x[0] === win); if (e) return { ow: e[1], l: e[2], s: e[3], netOpen: e[4], netAll: e[5], first: e[6] }; }
+  if (r && win === DAY) return { ow: r.o24, l: r.long24, s: r.short24, netOpen: r.net, netAll: r.net, first: r.first24 };   // pre-v2.2 Copy Desk
+  return null;
+}
 function renderAttention() {
+  const win = state.attnWin || (state.attnWin = DAY);
+  const wLbl = (ATT_WINS.find(w => w[1] === win) || ['24h'])[0];
   const lv = state.live; const att = new Map();   // sym -> {sym, src: Set, chg, name, rank}
   const add = (sym, src, extra) => { const k = normSym(sym); if (!k || k.length > 12) return; const a = att.get(k) || { sym: k, src: new Set(), chg: null, name: '', rank: null, mcap: null }; a.src.add(src); Object.assign(a, Object.fromEntries(Object.entries(extra || {}).filter(([, v]) => v != null && v === v))); att.set(k, a); };
   if (lv.trend && lv.trend.coins) lv.trend.coins.forEach((c, i) => add(c.item.symbol, `CoinGecko #${i + 1}`, { name: c.item.name, rank: c.item.market_cap_rank, chg: c.item.data && c.item.data.price_change_percentage_24h && c.item.data.price_change_percentage_24h.usd }));
@@ -634,18 +650,23 @@ function renderAttention() {
   let lf = null; try { lf = JSON.parse(localStorage.getItem('qt_leaderflow') || 'null'); } catch (e) {}
   const flow = new Map(); if (lf && lf.rows) for (const r of lf.rows) flow.set(normSym(r.coin), r);
   const stale = !lf || Date.now() - lf.t > 2 * H1;
+  const legacy = !!(lf && lf.rows && lf.rows.length && !lf.rows[0].w);
+  const minC = ATT_MIN[win] || 2, minQ = ATT_QUIET[win] || 5;
   const rows = [];
-  for (const a of att.values()) { const f = flow.get(a.sym); rows.push({ ...a, f, kind: f ? (f.o24 >= 2 && f.net > 0 ? 'buy' : f.o24 >= 2 && f.net < 0 ? 'sell' : 'touch') : 'none' }); }
-  // quiet accumulation: leaders piling in (≥3 in 4h or ≥5 in 24h with net buying) but nobody talking
-  for (const f of flow.values()) if (!att.has(normSym(f.coin)) && ((f.o4 >= 3 || f.o24 >= 5) && f.net > 0)) rows.push({ sym: normSym(f.coin), src: new Set(), chg: f.px24, f, kind: 'quiet' });
+  for (const a of att.values()) { const f = attFlow(flow.get(a.sym), win);
+    rows.push({ ...a, f, kind: f && f.ow ? (f.ow >= minC && f.netOpen > 0 ? 'buy' : f.ow >= minC && f.netOpen < 0 ? 'sell' : 'touch') : 'none' }); }
+  for (const raw of flow.values()) { const sym = normSym(raw.coin); if (att.has(sym)) continue; const f = attFlow(raw, win); if (f && f.ow >= minQ && f.netOpen > 0) rows.push({ sym, src: new Set(), chg: raw.px24, f, kind: 'quiet' }); }
   const order = { buy: 0, sell: 1, quiet: 2, touch: 3, none: 4 };
-  rows.sort((p, q) => order[p.kind] - order[q.kind] || (q.f ? q.f.o24 : 0) - (p.f ? p.f.o24 : 0) || q.src.size - p.src.size);
-  const READ = { buy: ['up', 'Hot AND the top 100 are net buying — the only combination worth a closer look'], sell: ['down', 'Hot but the top 100 are net selling into it — crowd buying, smart money exiting'], quiet: ['', '<span style="color:var(--gold)">Quiet accumulation</span> — leaders piling in, no social attention yet'], touch: ['', 'Hot; a leader or two touched it, no consensus'], none: ['', 'Hot on socials, not one of the top 100 has touched it on Hyperliquid — attention only'] };
+  rows.sort((p, q) => order[p.kind] - order[q.kind] || (q.f ? q.f.ow : 0) - (p.f ? p.f.ow : 0) || q.src.size - p.src.size);
+  const READ = { buy: ['up', `Hot AND the top 100 are opening longs in the last ${wLbl} — the only combination worth a closer look`], sell: ['down', `Hot but the top 100 are opening shorts in the last ${wLbl} — crowd buying, smart money fading`], quiet: ['', `<span style="color:var(--gold)">Quiet accumulation</span> — leaders piling in over the last ${wLbl}, no social attention yet`], touch: ['', `Hot; a leader touched it in the last ${wLbl}, no consensus`], none: ['', `Hot on socials, not one of the top 100 has opened it in the last ${wLbl}`] };
+  const usd = v => (v >= 0 ? '+$' : '-$') + (Math.abs(v) >= 1e6 ? (Math.abs(v) / 1e6).toFixed(2) + 'M' : (Math.abs(v) / 1e3).toFixed(0) + 'k');
+  $('attnWin').innerHTML = ATT_WINS.map(([t, ms]) => `<button data-w="${ms}" style="border:none;cursor:pointer;font:inherit;font-size:10px;font-weight:650;padding:2px 9px;margin-left:4px;border-radius:999px;background:${ms === win ? 'linear-gradient(135deg,#93ce93,#5da96f)' : 'rgba(255,255,255,.08)'};color:${ms === win ? '#0c130d' : 'var(--ink-2)'}">${t}</button>`).join('');
   $('attn').innerHTML = rows.slice(0, 30).map((r, i) => { const [cls, txt] = READ[r.kind]; const f = r.f;
-    return `<tr><td>${i + 1}</td><td style="text-align:left"><b>${r.sym}</b>${r.name ? ` <span style="color:var(--muted)">${r.name}</span>` : ''}${r.rank ? ` <span class="pill refp" style="font-size:9px;padding:1px 6px">mcap #${r.rank}</span>` : ''}</td><td style="text-align:left;color:var(--muted);white-space:normal;max-width:260px">${[...r.src].join(' · ') || '–'}</td><td class="${r.chg == null ? '' : r.chg >= 0 ? 'up' : 'down'}">${r.chg == null ? '–' : (r.chg >= 0 ? '+' : '') + (+r.chg).toFixed(1) + '%'}</td><td>${f ? `<b>${f.o4}</b>` : '–'}</td><td>${f ? f.o24 : '–'}</td><td class="${f ? (f.net >= 0 ? 'up' : 'down') : ''}">${f ? (f.net >= 0 ? '+$' : '-$') + (Math.abs(f.net) >= 1e6 ? (Math.abs(f.net) / 1e6).toFixed(2) + 'M' : (Math.abs(f.net) / 1e3).toFixed(0) + 'k') : '–'}</td><td>${f && f.first24 ? `<span class="pill goldp">${f.first24}</span>` : '–'}</td><td style="text-align:left;white-space:normal;min-width:220px" class="${cls}">${txt}</td></tr>`; }).join('') || '<tr><td colspan="9" style="color:var(--muted);text-align:center;padding:14px">No trending data loaded.</td></tr>';
+    return `<tr><td>${i + 1}</td><td style="text-align:left"><b>${r.sym}</b>${r.name ? ` <span style="color:var(--muted)">${r.name}</span>` : ''}${r.rank ? ` <span class="pill refp" style="font-size:9px;padding:1px 6px">mcap #${r.rank}</span>` : ''}</td><td style="text-align:left;color:var(--muted);white-space:normal;max-width:260px">${[...r.src].join(' · ') || '–'}</td><td class="${r.chg == null ? '' : r.chg >= 0 ? 'up' : 'down'}">${r.chg == null ? '–' : (r.chg >= 0 ? '+' : '') + (+r.chg).toFixed(1) + '%'}</td><td>${f && f.ow ? `<b>${f.ow}</b>` : '–'}</td><td>${f && f.ow ? `<span class="up">${f.l}L</span> / <span class="down">${f.s}S</span>` : '–'}</td><td class="${f && f.netOpen >= 0 ? 'up' : 'down'}">${f && f.ow ? usd(f.netOpen) : '–'}</td><td class="${f && f.netAll >= 0 ? 'up' : 'down'}" style="font-size:11px">${f && (f.ow || f.netAll) ? usd(f.netAll) : '–'}</td><td>${f && f.first ? `<span class="pill goldp">${f.first}</span>` : '–'}</td><td style="text-align:left;white-space:normal;min-width:220px" class="${cls}">${txt}</td></tr>`; }).join('') || '<tr><td colspan="10" style="color:var(--muted);text-align:center;padding:14px">No trending data loaded.</td></tr>';
   const nHot = att.size, nBuy = rows.filter(r => r.kind === 'buy').length, nSell = rows.filter(r => r.kind === 'sell').length, nQuiet = rows.filter(r => r.kind === 'quiet').length;
-  $('attnTag').textContent = `${nHot} tokens trending · ${nBuy} with smart-money buying · ${nSell} being sold into · ${nQuiet} quiet accumulation${stale ? ' · leader flow ' + (lf ? 'is ' + Math.round((Date.now() - lf.t) / 60e3) + ' min old' : 'missing') : ''}`;
-  $('attnNote').innerHTML = `Attention = CoinGecko trending search, DEXScreener boosted tokens (resolved to symbols) and GeckoTerminal trending pools, live. Smart money = the Copy Desk's leader-flow board (distinct Hyperliquid top-100 addresses opening a market in 4h / 24h, net notional bought minus sold over 24h, first-touch count)${lf ? `, last refreshed ${new Date(lf.t).toISOString().replace('T', ' ').slice(0, 16)} UTC` : ''}. ${stale ? '<b>Open the Copy Desk tab once so the leader-flow board refreshes</b> — this page only reads what that page wrote. ' : ''}A token can only be matched when it also trades as a Hyperliquid perp; memecoins that exist only on-chain show as "attention only" by construction. This is a discovery filter, not a signal: a 100x candidate is by definition a token most holders lose everything on — the only thing this board can do is separate crowd-only hype from names where the people with the best 30-day records are actually positioned.`;
+  const perWin = ATT_WINS.map(([lbl, ms]) => { const mc = ATT_MIN[ms] || 2; let n = 0; for (const a of att.values()) { const f = attFlow(flow.get(a.sym), ms); if (f && f.ow >= mc && f.netOpen > 0) n++; } return `${lbl} ${n}`; }).join(' · ');
+  $('attnTag').textContent = `${nHot} tokens trending · in the last ${wLbl}: ${nBuy} with smart-money buying, ${nSell} being faded, ${nQuiet} quiet accumulation · crosses by window: ${perWin}${stale ? ' · leader flow ' + (lf ? 'is ' + Math.round((Date.now() - lf.t) / 60e3) + ' min old' : 'missing') : ''}`;
+  $('attnNote').innerHTML = `Attention = CoinGecko trending search, DEXScreener boosted tokens (resolved to symbols) and GeckoTerminal trending pools, <b>live and with no history</b> — those APIs only answer "what is trending right now", so the window above applies to the smart-money half only. Smart money = the Copy Desk's leader-flow board for the selected ${wLbl} window: distinct Hyperliquid top-100 addresses <b>opening</b> a market, their long/short split, notional opened long minus opened short (new-position net), the same figure including closes, and first-touch count${lf ? `, last refreshed ${new Date(lf.t).toISOString().replace('T', ' ').slice(0, 16)} UTC` : ''}. Consensus needs ${minC} opener(s) at ${wLbl}; quiet accumulation needs ${minQ}. ${legacy ? '<b>The Copy Desk tab is still on an older version — only the 24h window has data.</b> ' : ''}${stale ? '<b>Open the Copy Desk tab once so the leader-flow board refreshes</b> — this page only reads what that page wrote. ' : ''}Short windows are sparse by construction: across all 100 leaders only a handful of markets see any opening in half an hour, so a single fill can decide a row. A token can only be matched when it also trades as a Hyperliquid perp; memecoins that exist only on-chain show as "attention only". This is a discovery filter, not a signal: a 100x candidate is by definition a token most holders lose everything on — the only thing this board can do is separate crowd-only hype from names where the people with the best 30-day records are actually positioned.`;
 }
 function renderArena() {
   const a = state.arena, scored = a.pool.map(g => ({ g, s: S_score(g, g.birth, a.now) })).sort((x, y) => y.s.ret - x.s.ret || x.g.id.localeCompare(y.g.id));
@@ -691,8 +712,9 @@ function renderFeed(scored) {
 function renderAll() {
   if ($('app').classList.contains('loading')) { $('app').classList.remove('loading'); $('app').innerHTML = $('tpl').innerHTML; }
   renderBoard(); try { renderAttention(); } catch (e) { const el = $('attnNote'); if (el) el.textContent = 'Attention board failed: ' + e.message; }
+  const aw = $('attnWin'); if (aw && !aw.dataset.bound) { aw.dataset.bound = '1'; aw.addEventListener('click', e => { const b = e.target.closest('button[data-w]'); if (!b) return; state.attnWin = +b.dataset.w; try { renderAttention(); } catch (err) {} }); }
   renderArena();
-  $('foot').innerHTML = `Signal Desk v1.2.3 · seed ${SIG_SEED} · ${S_KEYS.length} signal species + signal∧trend combos · ${S_SEATS} seats, ${S_BENCH}-bot bench · weekly evolution on Monday 00:00 UTC · paper only, no keys, no real funds.<br>Snapshots loaded: ${state.snapFiles.join(', ') || 'none'} · Binance keeps derivatives series for 30 days only, so history is preserved in weekly snapshot files inside the repo.`;
+  $('foot').innerHTML = `Signal Desk v1.3 · seed ${SIG_SEED} · ${S_KEYS.length} signal species + signal∧trend combos · ${S_SEATS} seats, ${S_BENCH}-bot bench · weekly evolution on Monday 00:00 UTC · paper only, no keys, no real funds.<br>Snapshots loaded: ${state.snapFiles.join(', ') || 'none'} · Binance keeps derivatives series for 30 days only, so history is preserved in weekly snapshot files inside the repo.`;
 }
 /* ---------- snapshot export (weekly: copies a compact JSON of the merged series to the clipboard) ---------- */
 window.SIG = { state, exportSnapshot() { const s = state.series; const c = { symbol: 'BTCUSDT', taken: Date.now(), period: '1h', oi: s.oi, ls: s.ls, top: s.top, tk: s.tk, funding: s.funding, fng: s.fng }; return JSON.stringify(c); }, replay: S_replay, score: S_score, pos: S_pos, blocks: S_BLOCKS };
