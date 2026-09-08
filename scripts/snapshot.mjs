@@ -30,6 +30,10 @@ async function snapCopy() {
   await waitFor(page, () => document.querySelector('#top10 tr') || (document.getElementById('connTxt') || {}).textContent === 'Error', 6 * 60e3, 'copy first render');
   await waitFor(page, () => window.COPY && !COPY.state.syncing, 6 * 60e3, 'copy sync');
   await waitFor(page, () => window.COPY && !(COPY.state.live && COPY.state.live.barsPending), 3 * 60e3, 'copy bars');
+  // Signal Desk's attention x smart-money board reads localStorage.qt_leaderflow, which Copy Desk only fills on the
+  // render that follows the fill sync. Waiting on `!syncing` alone was not enough: the 2026-09-07/08 snapshots
+  // captured the page mid-refresh, wrote an EMPTY board, and every attention row came back "attention only".
+  await waitFor(page, () => { try { const lf = JSON.parse(localStorage.getItem('qt_leaderflow') || 'null'); return !!(lf && lf.rows && lf.rows.length); } catch (e) { return false; } }, 3 * 60e3, 'copy leader-flow board');
   await sleep(5000);
   const d = await page.evaluate(() => {
     const S = COPY.state, H1 = 3600e3, now = Date.now();
