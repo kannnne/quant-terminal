@@ -4,6 +4,7 @@
 // about how the pages compute; it only records what a visitor would see at that moment.
 import { chromium } from 'playwright';
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { buildRoster, mondayOf } from './roster.mjs';
 
 const BASE = process.env.SITE || 'https://kannnne.github.io/quant-terminal';
 const TRADOOOR = process.env.TRADOOOR || 'https://tradooor.rekt.com';   // tests point this at a local replay of their API
@@ -29,7 +30,12 @@ async function snapCopy() {
   const t0 = Date.now();
   await page.goto(`${BASE}/copy.html?still&snap=${now}`, { waitUntil: 'domcontentloaded' });
   await waitFor(page, () => document.querySelector('#top10 tr') || (document.getElementById('connTxt') || {}).textContent === 'Error', 6 * 60e3, 'copy first render');
-  await waitFor(page, () => window.COPY && !COPY.state.syncing, 6 * 60e3, 'copy sync');
+  // The runner is a cold browser every hour: no IndexedDB, so the page has to REST-sync ~85 addresses back to the
+  // roster freeze, paging with a 1.1 s courtesy sleep. That is 5-8 minutes. The old 6-minute budget expired mid-sync
+  // on most runs, and the arena below was then scored on whatever fraction of the tape had arrived (65k-86k fills
+  // against ~100k on a warm browser), which is why the hourly numbers disagreed with the live page and with each other.
+  const synced = await waitFor(page, () => window.COPY && !COPY.state.syncing, 16 * 60e3, 'copy sync');
+  if (!synced) log('copy: sync did NOT finish inside the budget — this snapshot will be flagged partial');
   await waitFor(page, () => window.COPY && !(COPY.state.live && COPY.state.live.barsPending), 3 * 60e3, 'copy bars');
   // Signal Desk's attention x smart-money board reads localStorage.qt_leaderflow, which Copy Desk only fills on the
   // render that follows the fill sync. Waiting on `!syncing` alone was not enough: the 2026-09-07/08 snapshots
@@ -39,6 +45,11 @@ async function snapCopy() {
   const d = await page.evaluate(() => {
     const S = COPY.state, H1 = 3600e3, now = Date.now();
     const r = S.rosters && S.rosters[0];
+    // How much of the tape this run actually holds. `partial` is the flag the report must respect: when it is set,
+    // every arena figure below was computed on an incomplete tape and must not be quoted as the arena's state.
+    const sync = { syncing: !!S.syncing, ws: S.live.snapCount ?? null, need: S.sync.total ?? null, done: S.sync.done ?? null, rest: S.sync.rest ?? null,
+                   err: S.live.syncErr || 0, fills: COPY.fillCount ? COPY.fillCount() : null, addrsWithFills: [...S.fills.values()].filter(a => a.length).length };
+    sync.partial = sync.syncing || (sync.need != null && sync.done != null && sync.done < sync.need) || sync.err > 0;
     const lf = JSON.parse(localStorage.getItem('qt_leaderflow') || 'null');
     // 24h flow per market from the raw tape (perps only): who opened what, and the net notional
     const agg = new Map();
@@ -62,11 +73,28 @@ async function snapCopy() {
       // Copy Desk v2.3: buy-and-hold BTC from the same freeze, our fees and funding. The arena runs
       // 90%+ long, so the seat average only means something next to this line — `excess` is the test.
       bench: S.bench ? { coin: S.bench.coin, lev: S.bench.lev, ret: +S.bench.ret.toFixed(2), gross: +S.bench.gross.toFixed(2), cost: +S.bench.cost.toFixed(2), entry: S.bench.entry, px: S.bench.px } : null,
+      sync,
       feed: [...document.querySelectorAll('#feed .frow')].slice(0, 25).map(r => r.innerText.replace(/\s+/g, ' ').trim()),
     };
   });
   d.banner = await page.evaluate(() => ((document.getElementById('errBanner') || {}).textContent || '').trim().slice(0, 300) || null);
   d.loadMs = Date.now() - t0; d.pageErrors = errs.slice(0, 5);
+
+  // Weekly fills archive. Hyperliquid keeps only each address's most recent fills, so the tape has to be written
+  // down before it rolls off; the page merges every data/copy-fills-<Monday>.json it finds on top of its live sync.
+  // The charter made this a manual Monday export and it was never done (no file for 09-07 or 09-14), which is also
+  // why every cold runner had to rebuild nine days of tape from scratch. Written once per Monday, and only from a
+  // run whose sync completed -- an archive of a partial tape would freeze the hole in.
+  try {
+    const wk = new Date(now); const monday = new Date(Date.UTC(wk.getUTCFullYear(), wk.getUTCMonth(), wk.getUTCDate() - ((wk.getUTCDay() + 6) % 7)));
+    const f = `data/copy-fills-${monday.toISOString().slice(0, 10)}.json`;
+    if (wk.getUTCDay() === 1 && !existsSync(f) && d.sync && !d.sync.partial && (d.sync.fills || 0) > 0) {
+      const since = existsSync(`data/copy-fills-${new Date(monday.getTime() - 7 * DAY).toISOString().slice(0, 10)}.json`) ? monday.getTime() - 8 * DAY : 0;
+      const txt = await page.evaluate(s => { const o = {}; for (const [a, arr] of COPY.state.fills) { const k = s ? arr.filter(x => x[0] >= s) : arr; if (k.length) o[a] = k; } return JSON.stringify(o); }, since);
+      writeFileSync(f, txt); log('weekly fills archive', f, txt.length, 'bytes', since ? '(delta since ' + new Date(since).toISOString().slice(0, 10) + ')' : '(full)');
+      d.fillsArchive = { file: f, bytes: txt.length };
+    }
+  } catch (e) { log('fills archive skipped:', e.message); }
   await page.close(); return d;
 }
 
@@ -194,6 +222,20 @@ async function snapTradooor() {
 // tradooor goes last: it is an outside site, nothing else depends on it, and a failure there must not cost
 // us the three pages that matter.
 const ONLY = (process.env.ONLY || '').split(',').map(s => s.trim()).filter(Boolean);   // ONLY=tradooor for a targeted run
+
+/* ---------------- Monday: re-freeze the Copy Desk roster ----------------
+   Charter §一: the 100 followed addresses are re-selected from the live leaderboard every Monday. Never automated
+   until 2026-09-14 (Kane: option A). Runs before the pages so the file rides in this run's commit; the LIVE page
+   only sees it once GitHub Pages redeploys, so the roster takes effect from the next snapshot, not this one.
+   ~300 Hyperliquid calls at 1.1 s spacing (5-6 min) -- that is why it sits on Monday only, and ahead of the
+   75 s cooldown that already protects Signal Desk from Copy Desk's own sync. */
+if (!ONLY.length && new Date(now).getUTCDay() === 1) {
+  try {
+    const res = await buildRoster(mondayOf(now), { log });
+    if (res) { log('roster frozen', res.file, res.roster.traders.length, 'traders'); out.rosterFrozen = res.file; }
+    else log('roster for', mondayOf(now), 'already exists');
+  } catch (e) { log('roster build FAILED (pages continue on the previous roster):', e.message); out.rosterError = String(e.message).slice(0, 200); }
+}
 for (const [name, fn] of [['copy', snapCopy], ['signals', snapSignals], ['rekt', snapRekt], ['tradooor', snapTradooor]]) {
   if (ONLY.length && !ONLY.includes(name)) continue;
   if (name === 'signals') { log('cooldown 75s to clear the Hyperliquid rate window'); await new Promise(r => setTimeout(r, 75e3)); }
@@ -227,8 +269,10 @@ for (const k of ['copy', 'signals', 'rekt']) if (out.pages[k]) write(`${k}.json`
 const td = out.pages.tradooor || {};
 write('latest.json', {
   taken: now, takenIso: out.takenIso, site: BASE,
-  pages: Object.fromEntries(Object.entries(out.pages).filter(([k]) => k !== 'tradooor').map(([k, v]) => [k, v.error ? { error: v.error } : { ok: !/^Error/.test(v.conn || ''), loadMs: v.loadMs, conn: v.conn, banner: v.banner }])),
+  pages: Object.fromEntries(Object.entries(out.pages).filter(([k]) => k !== 'tradooor').map(([k, v]) => [k, v.error ? { error: v.error } : { ok: !/^Error/.test(v.conn || ''), loadMs: v.loadMs, conn: v.conn, banner: v.banner, ...(v.sync ? { partial: !!v.sync.partial, fills: v.sync.fills, synced: `${v.sync.done}/${v.sync.need}` } : {}) }])),
   tradooor: td.error ? { error: td.error } : { ...(td.meta || {}), archetypes: td.archetypes || null, top: (td.top || []).slice(0, 5) },
+  roster: out.rosterFrozen ? { frozen: out.rosterFrozen } : out.rosterError ? { error: out.rosterError } : undefined,
+  fillsArchive: (out.pages.copy && out.pages.copy.fillsArchive) || undefined,
 });
 
 // rolling hourly history (kept small: one line per hour, 14 days).
