@@ -10,9 +10,11 @@
 // whoSet() on the page ("steady", "low leverage", "whales") keeps meaning the same thing week to week.
 //
 // ROI scale: Hyperliquid reports roi as a fraction (0.5 = +50%) and the page renders `mroi * 100`. This file
-// stores the fraction as received and says so with roiScale: 1. (The 2026-09-05 file stored mroi already
-// multiplied by 100 -- 1263.18 for a +1,263% month -- which the page then shows as 126,318%; copy.html
-// normalises legacy rosters that lack roiScale.)
+// stores the fraction as received and says so with roiScale: 1 -- the same unit the hand-built 2026-09-05 file
+// used. Very large values are genuine: on the first automated roster three accounts have roi × 100 equal to
+// their pnl to the cent, i.e. Hyperliquid floors the ROI denominator at ~$100 for accounts that started the
+// window near-empty. "Top 100 by 30-day ROI" therefore favours tiny-starting-balance lottery winners; the
+// av >= $20k filter is on CURRENT value and does not prevent it. Whether to change the rule is Kane's call.
 import { writeFileSync, existsSync } from 'node:fs';
 
 const LB_URL = 'https://stats-data.hyperliquid.xyz/Mainnet/leaderboard';

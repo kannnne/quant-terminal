@@ -74,6 +74,13 @@ async function snapCopy() {
       // 90%+ long, so the seat average only means something next to this line — `excess` is the test.
       bench: S.bench ? { coin: S.bench.coin, lev: S.bench.lev, ret: +S.bench.ret.toFixed(2), gross: +S.bench.gross.toFixed(2), cost: +S.bench.cost.toFixed(2), entry: S.bench.entry, px: S.bench.px } : null,
       sync,
+      // Copy Desk v3.0 Mirror Desk: one bot per wallet. The table Kane actually asked for -- which wallets are worth
+      // copying after our delay and costs -- so the whole ranking goes in, not just a top slice.
+      mirror: S.mirror && S.mirror.scored ? (() => { const sc = S.mirror.scored, n = sc.length; const rets = sc.map(x => x.s.ret).sort((a, b) => a - b);
+        const row = x => ({ a: x.b.a, name: x.b.name || null, rank: x.b.rank, mroi: x.b.mroi, av: x.b.av, lev: x.b.lev, his: +x.s.his.toFixed(2), hisPct: +x.s.hisPct.toFixed(2), ret: +x.s.ret.toFixed(2), retReal: +x.s.retReal.toFixed(2), gap: +(x.s.ret - x.s.hisPct).toFixed(2), fills: x.s.fills, trades: x.s.trades, liqs: x.s.liqs, dd: +x.s.dd.toFixed(2), dead: x.s.dead, retired: !!x.b.death, open: x.s.open.map(o => (o.side === 1 ? 'L ' : 'S ') + o.coin) });
+        return { n, alive: S.mirror.alive, profitable: sc.filter(x => x.s.ret > 0).length, leadersProfitable: sc.filter(x => x.s.his > 0).length, both: sc.filter(x => x.s.his > 0 && x.s.ret > 0).length, scissors: sc.filter(x => x.s.his > 0 && x.s.ret <= 0).length, bust: sc.filter(x => x.s.dead).length,
+                 avg: n ? +(rets.reduce((a, b) => a + b, 0) / n).toFixed(2) : null, median: n ? +rets[Math.floor(n / 2)].toFixed(2) : null, leadersAvg: n ? +(sc.reduce((a, x) => a + x.s.hisPct, 0) / n).toFixed(2) : null,
+                 tag: (document.getElementById('mirrorTag') || {}).textContent, rows: sc.map(row) }; })() : null,
       feed: [...document.querySelectorAll('#feed .frow')].slice(0, 25).map(r => r.innerText.replace(/\s+/g, ' ').trim()),
     };
   });
@@ -232,7 +239,10 @@ const ONLY = (process.env.ONLY || '').split(',').map(s => s.trim()).filter(Boole
 if (!ONLY.length && new Date(now).getUTCDay() === 1) {
   try {
     const res = await buildRoster(mondayOf(now), { log });
-    if (res) { log('roster frozen', res.file, res.roster.traders.length, 'traders'); out.rosterFrozen = res.file; }
+    if (res) { log('roster frozen', res.file, res.roster.traders.length, 'traders'); out.rosterFrozen = res.file;
+      // The build just spent ~300 Hyperliquid calls from this IP. The first Monday run (2026-09-14 16:24) went
+      // straight into Copy Desk's sync and 29 of 86 REST gap-fills came back 429 -- partial tape, no archive.
+      log('cooldown 90s after the roster build to clear the Hyperliquid rate window'); await sleep(90e3); }
     else log('roster for', mondayOf(now), 'already exists');
   } catch (e) { log('roster build FAILED (pages continue on the previous roster):', e.message); out.rosterError = String(e.message).slice(0, 200); }
 }
