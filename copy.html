@@ -220,7 +220,16 @@
   </div>
 
   <div class="card g-green">
-    <h2>Copy Arena · Top 10 <span class="tag" id="arenaTag">–</span>
+    <h2>Mirror Desk · one bot per wallet, the top 100 copied one-to-one <span class="tag" id="mirrorTag">–</span>
+      <span class="legend"><span><i style="background:var(--green)"></i>Copy profitable</span><span><i style="background:var(--red)"></i>Copy losing</span><span><i style="background:var(--gold)"></i>✂ he profits, copy loses</span></span></h2>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>#</th><th style="text-align:left">Wallet · roster rank</th><th>30d ROI at freeze</th><th>His forward (realised)</th><th>Copying him (after costs)</th><th style="min-width:110px"></th><th>Gap</th><th>Fills · trades</th><th>Max DD</th><th>Status</th></tr></thead>
+      <tbody id="mirror"></tbody></table></div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:8px" id="mirrorNote">–</div>
+  </div>
+
+  <div class="card g-green">
+    <h2>Copy Arena · gene bots · Top 10 <span class="tag" id="arenaTag">–</span>
       <span class="legend"><span><i style="background:var(--green)"></i>Profit</span><span><i style="background:var(--red)"></i>Loss</span><span><i style="background:var(--teal)"></i>In position</span></span></h2>
     <div style="overflow-x:auto"><table>
       <thead><tr><th>#</th><th>Bot</th><th style="text-align:left">Rule</th><th>Forward equity</th><th style="min-width:110px"></th><th>Trades</th><th>Status</th></tr></thead>
@@ -248,7 +257,7 @@ const ROSTER_MONDAY0 = Date.UTC(2026, 8, 7);
 const G = { who: ['all', 'top10', 'top25', 'whales', 'steady', 'lowlev'], delay: [1, 5, 15], k: [1, 1, 2, 3], maxPos: [3, 5], lev: [1, 1, 2, 2, 3, 5], sl: [0, 0.03, 0.05, 0.10], exit: ['mirror', 'mirror', 'h4', 'h24', 'h72'] };
 const WHO_NM = { all: 'all 100', top10: 'top 10 by ROI', top25: 'top 25 by ROI', whales: '25 biggest accounts', steady: 'steady (win ≥55%, ≥20 closes)', lowlev: 'low leverage (≤5x)' };
 const CONSENSUS_WIN = 4 * H1;
-const COPY_VER = '2.4';
+const COPY_VER = '3.0';
 
 function C_rng(a) { return function() { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const pick = (rng, arr) => arr[Math.floor(rng() * arr.length) % arr.length];
@@ -284,11 +293,12 @@ async function loadRosters() {
   rosters.sort((a, b) => a.frozen - b.frozen);
   for (const r of rosters) {
     r.traders.forEach((t, i) => { t.rank = i + 1; }); r.uni = null; /* v2: no venue filter */ r.byA = new Map(r.traders.map(t => [t.a, t]));
-    // ROI scale. Rosters built by scripts/roster.mjs store Hyperliquid's raw fraction and say so (roiScale: 1); the
-    // hand-built 2026-09-05 file stored mroi already x100 (1263.18 for a +1,263% month), which this table then
-    // showed as 126,318%. Normalise the legacy file to the fraction the renderer expects. Display only: whoSet()
-    // never reads mroi, so bot behaviour is unchanged.
-    if (r.roiScale !== 1) for (const t of r.traders) if (t.mroi != null) t.mroi = t.mroi / 100;
+    // ROI scale: mroi is Hyperliquid's raw fraction on every roster (the renderer multiplies by 100). The huge values
+    // at the top are real, not a unit slip: the 2026-09-14 roster shows three accounts whose roi × 100 equals their
+    // pnl to the cent, i.e. Hyperliquid floors the ROI denominator at ~$100 -- these are accounts that started the
+    // 30-day window near-empty. "Top 100 by 30-day ROI" therefore selects for tiny starting balances that got
+    // lucky, which the av >= $20k filter (current value, after deposits) does not prevent. Selection rule is Kane's
+    // call; recorded in the charter. (v2.4 briefly divided the first roster's mroi by 100; that was wrong — undone.)
   }
   state.rosters = rosters; state.snapFiles = state.snapFiles.concat(fillFiles);
 }
@@ -338,13 +348,24 @@ async function syncFills(onProgress) {
     const covered = (known.length > 0 && snap.length < 500) || oldest <= Math.max(lastKnown, state.rosters[0].frozen);
     if (!covered) need.push(a);
   }
-  state.sync.total = need.length;
-  for (const a of need) {
+  state.sync.total = need.length; state.live.syncErr = 0;
+  const failed = [];
+  const pull = async a => {
     const known = state.fills.get(a) || [];
     const from = Math.max(state.rosters[0].frozen, known.length ? known[known.length - 1][0] + 1 : 0);
-    try { mergeFills(a, await restFills(a, from)); state.sync.rest++; } catch (e) { state.live.syncErr = (state.live.syncErr || 0) + 1; }
+    mergeFills(a, await restFills(a, from)); state.sync.rest++;
+  };
+  for (const a of need) {
+    try { await pull(a); } catch (e) { failed.push(a); }
     state.sync.done++; if (onProgress) onProgress(`REST gap-fill ${state.sync.done}/${need.length}`);
     await sleep(1050);
+  }
+  // Second pass for addresses that failed (almost always a 429 when something ahead of us -- the Monday roster
+  // build, or another page -- has just spent the IP's Hyperliquid budget). One wait for the window to clear, one
+  // retry each; whatever still fails is counted in syncErr and reported as partial by the snapshot.
+  if (failed.length) {
+    if (onProgress) onProgress(`REST retry ${failed.length} after cooldown`); await sleep(65000);
+    for (const a of failed) { try { await pull(a); } catch (e) { state.live.syncErr = (state.live.syncErr || 0) + 1; } await sleep(1300); }
   }
   persistFills(); state.syncing = false;
 }
@@ -357,7 +378,7 @@ function buildEvents() {
     const isOpen = d === 'OL' || d === 'OS' || d === 'LS' || d === 'SL';
     const side = (d === 'OL' || d === 'SL') ? 1 : (d === 'OS' || d === 'LS') ? -1 : d === 'CL' ? 1 : -1;
     const rem = (d === 'CL' || d === 'CS') && f[5] > 0 ? Math.max(0, (f[5] - f[4]) / f[5]) : 0;
-    ev.push({ t: f[0], a, coin: f[1], sym, d, open: isOpen, side, px: f[3], sz: f[4], notional: f[3] * f[4], rem, pnl: f[6], rank: t.rank, spot: isSpot(f[1]) });
+    ev.push({ t: f[0], a, coin: f[1], sym, d, open: isOpen, side, px: f[3], sz: f[4], start: f[5], notional: f[3] * f[4], rem, pnl: f[6], rank: t.rank, spot: isSpot(f[1]) });
   }
   ev.sort((p, q) => p.t - q.t);
   state.events = ev;
@@ -586,6 +607,120 @@ function C_bench(coin, lev) {
   return { coin, lev, entry, px, from: grid[i0], bars: i1 - i0,
            ret: (gross - fees - fund) * 100, gross: gross * 100, cost: (fees + fund) * 100 };
 }
+/* ===================== MIRROR DESK · one bot per wallet =====================
+   Kane, 2026-09-14: "each robot follow each wallet — exactly copy the top 100 wallets with 100 robots".
+   The gene arena answers WHICH COPYING RULES work; this desk answers WHICH WALLETS are worth copying.
+   One bot per roster wallet, defined by the address, not the rank. No genes, no evolution, no bench:
+     - sizing by exposure ratio: our notional on every fill = his notional × ($1,000 ÷ his account value at the
+       freeze that listed him), so our book carries the same leverage profile he runs;
+     - delay fixed at one 1-minute bar — the most favourable assumption a copier can make; if the copy loses
+       here it loses everywhere;
+     - exits mirrored exactly: he trims 30%, we trim 30%; he closes, we close; he reverses, we reverse;
+     - no stop, no time exit, no consensus — the pure "just copy him" number;
+     - same money rules as everything else: 0.07%/side on notional, funding 0.0000125/h × notional, wick
+       liquidation when a position loses 95% of its margin (margin = notional ÷ his average leverage at the
+       freeze, 1x when unknown), bankrupt when equity ≤ $500 (everything closed, bot stops);
+     - a wallet's bot lives while the wallet is on the current roster; when a re-freeze drops it the bot closes
+       at the next bar and retires with its final number; a newly listed wallet gets a new bot at that freeze.
+   Each bot reports three numbers: his own realised P&L since the freeze (does he have anything), our mirrored
+   return after costs (can it be copied), and the gap between the two (what copying him costs). */
+function M_score(bot, fromTs, toTs, out, retire) {
+  const grid = state.grid, gi = state.gridIdx;
+  const empty = { ret: 0, retReal: 0, his: 0, hisPct: 0, trades: 0, liqs: 0, fills: 0, inPos: 0, open: [], dead: false, dd: 0, scale: 0, L: 1 };
+  if (!grid || !grid.length || !bot || !(bot.av > 0)) return empty;
+  const scale = 1 / bot.av;                                   // his $ → seat units (1.0 = $1,000): N_seat = his_usd × 1000/av ÷ 1000
+  const L = bot.lev && bot.lev > 0 ? bot.lev : 1;
+  const dec = new Map(); let hisPnl = 0, nFills = 0;
+  for (const e of state.events) {
+    if (e.a !== bot.a || e.t < fromTs || e.t > toTs || e.spot) continue;
+    const idx = Math.floor((e.t - grid[0]) / BAR);           // delay 1: the 1m bar containing his fill, at its close
+    if (idx < 0 || idx >= grid.length) continue;
+    if (!dec.has(idx)) dec.set(idx, []); dec.get(idx).push(e); nFills++; hisPnl += e.pnl || 0;
+  }
+  let cash = 1, trades = 0, liqs = 0, dead = false, peak = 1, maxDD = 0, realised = 0;
+  const pos = new Map();                                      // sym -> { sym, coin, side, N, alloc, entry, fund, last }
+  const held = () => { let s = 0; for (const q of pos.values()) s += q.alloc; return s; };
+  const rec = (ts, act, coin, side, px, usd, eq) => { if (out) out.push({ ts, act, coin, side, px, usd: usd * C_DEP, bal: eq * C_DEP, leader: bot.a }); };
+  const equity = i => { let eq = cash; for (const p of pos.values()) { const b = B(p.sym, i); const px = b ? b[4] : p.last; p.last = px; eq += p.alloc + p.N * p.side * (px / p.entry - 1) - p.fund; } return eq; };
+  const closePart = (p, frac, px, i, act) => {               // close `frac` of a position at px, fee on the closed notional
+    frac = Math.max(0, Math.min(1, frac)); if (frac <= 0) return;
+    const N = p.N * frac, alloc = p.alloc * frac, fund = p.fund * frac;
+    const pnl = N * p.side * (px / p.entry - 1), net = pnl - N * C_FEE - fund;
+    cash += alloc + net; realised += net; trades++;
+    p.N -= N; p.alloc -= alloc; p.fund -= fund;
+    if (p.N <= 1e-9) pos.delete(p.sym);
+    rec(grid[i] + BAR, act, p.coin, p.side, px, net, cash + held());
+  };
+  const openAdd = (sym, coin, side, N, px, i) => {           // open or pyramid; N in seat units, capped by cash × L
+    const alloc = Math.min(cash, N / L); if (alloc <= 1e-6) return;
+    N = alloc * L; cash -= alloc + N * C_FEE; realised -= N * C_FEE;
+    const p = pos.get(sym);
+    if (p && p.side === side) { p.entry = (p.entry * p.N + px * N) / (p.N + N); p.N += N; p.alloc += alloc; }
+    else pos.set(sym, { sym, coin, side, N, alloc, entry: px, fund: 0, last: px });
+    rec(grid[i] + BAR, 'OPEN', coin, side, px, alloc, cash + held());
+  };
+  let lastI = 0;
+  for (let i = 0; i < grid.length; i++) {
+    const t = grid[i]; if (t + BAR <= fromTs) continue; if (t > toTs) break; lastI = i;
+    for (const p of [...pos.values()]) {                      // mark, funding, wick liquidation
+      const b = B(p.sym, i); if (!b) continue;
+      p.fund += p.N * C_FUND_H / 60;
+      const adverse = p.side === 1 ? b[3] : b[2];
+      if (p.side * (adverse / p.entry - 1) * L <= -0.95) { cash += p.alloc * 0.02; realised -= p.alloc * 0.98; liqs++; trades++; pos.delete(p.sym); rec(t + BAR, 'LIQ', p.coin, p.side, adverse, -p.alloc * 0.98, cash + held()); }
+    }
+    if (!dead) {
+      const list = dec.get(i); if (list) for (const e of list) {
+        const b = B(e.sym, i); if (!b) continue; const px = b[4];
+        const p = pos.get(e.sym);
+        if (e.d === 'CL' || e.d === 'CS') { if (p) closePart(p, 1 - e.rem, px, i, 'CLOSE'); }
+        else if (e.d === 'LS' || e.d === 'SL') {               // reversal: out of the old side, into the new with what remains of his fill
+          if (p) closePart(p, 1, px, i, 'CLOSE');
+          const newSz = Math.max(0, e.sz - (e.start || 0)); if (newSz > 0) openAdd(e.sym, e.coin, e.side, newSz * e.px * scale, px, i);
+        } else {                                              // OL / OS: open or add on his side
+          if (p && p.side !== e.side) closePart(p, 1, px, i, 'CLOSE');
+          openAdd(e.sym, e.coin, e.side, e.notional * scale, px, i);
+        }
+      }
+      if (equity(i) * C_DEP <= C_RUIN) { dead = true; for (const p of [...pos.values()]) { const b = B(p.sym, i); closePart(p, 1, b ? b[4] : p.last, i, 'CLOSE'); } }
+    }
+    const eq = equity(i); if (eq > peak) peak = eq; const dd = peak > 0 ? (peak - eq) / peak : 0; if (dd > maxDD) maxDD = dd;
+  }
+  if (retire) for (const p of [...pos.values()]) { const b = B(p.sym, lastI); closePart(p, 1, b ? b[4] : p.last, lastI, 'CLOSE'); }
+  const eqEnd = equity(lastI);
+  return { ret: (eqEnd - 1) * 100, retReal: realised * 100, his: hisPnl, hisPct: hisPnl / bot.av * 100, trades, liqs, fills: nFills, inPos: pos.size,
+           open: [...pos.values()].map(p => ({ coin: p.coin, side: p.side })), dead, dd: maxDD * 100, scale, L };
+}
+function M_replay() {
+  const now = state.grid.length ? state.grid[state.grid.length - 1] + BAR : Date.now();
+  const bots = new Map(); const R = state.rosters;
+  for (let k = 0; k < R.length; k++) {
+    const r = R[k], next = R[k + 1];
+    for (const t of r.traders) {
+      if (!bots.has(t.a)) bots.set(t.a, { a: t.a, name: t.name, rank: t.rank, mroi: t.mroi, av: t.av, lev: t.lev, coins: t.coins, birth: r.frozen, death: null });
+      const b = bots.get(t.a); if (next && !next.byA.has(t.a) && b.death == null) b.death = next.frozen;
+    }
+  }
+  const scored = [...bots.values()].map(b => { const log = []; return { b, s: M_score(b, b.birth, b.death || now, log, !!b.death), log }; })
+    .sort((x, y) => y.s.ret - x.s.ret || x.b.a.localeCompare(y.b.a));
+  return { scored, now, alive: scored.filter(x => !x.b.death).length };
+}
+function renderMirror() {
+  const m = state.mirror; if (!m || !$('mirror')) return;
+  const sc = m.scored, n = sc.length; if (!n) { $('mirrorTag').textContent = 'no wallets'; return; }
+  const rets = sc.map(x => x.s.ret).sort((a, b) => a - b);
+  const avg = rets.reduce((s, x) => s + x, 0) / n, med = rets[Math.floor(n / 2)];
+  const prof = sc.filter(x => x.s.ret > 0).length, hisProf = sc.filter(x => x.s.his > 0).length, both = sc.filter(x => x.s.his > 0 && x.s.ret > 0).length;
+  const hisAvg = sc.reduce((s, x) => s + x.s.hisPct, 0) / n;
+  const bm = state.bench, excess = bm ? avg - bm.ret : null, dead = sc.filter(x => x.s.dead).length;
+  const f = v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+  $('mirrorTag').textContent = `${n} wallets · copies profitable ${prof}/${n} · leaders profitable themselves ${hisProf}/${n} · both ${both} · copy avg ${f(avg)} · median ${f(med)} · leaders' own avg ${f(hisAvg)}` + (bm ? ` · vs long BTC ${f(bm.ret)} → excess ${f(excess)}` : '') + ` · ${dead} bust · ${m.alive}/${n} on the roster`;
+  const mx = Math.max(1, ...sc.map(x => Math.abs(x.s.ret)));
+  $('mirror').innerHTML = sc.map((x, i) => { const s = x.s, b = x.b, eq = C_DEP * (1 + s.ret / 100), w = Math.min(100, Math.abs(s.ret) / mx * 100), gap = s.ret - s.hisPct;
+    const st = s.dead ? '<span class="pill loss">BUST</span>' : b.death ? '<span class="pill refp">RETIRED</span>' : s.inPos ? `<span class="pill" style="background:rgba(138,214,176,.16);color:var(--teal)">${s.open.map(o => (o.side === 1 ? 'L ' : 'S ') + o.coin).join(', ')}</span>` : '<span class="pill refp">FLAT</span>';
+    const flag = s.his > 0 && s.ret <= 0 ? ' <span class="pill goldp" title="he made money; copying him did not">✂</span>' : '';
+    return `<tr><td>${i + 1}</td><td style="text-align:left"><b title="${b.a}">${b.name ? b.name : short(b.a)}</b> <span style="color:var(--muted)">#${b.rank}</span>${flag}</td><td class="${b.mroi >= 0 ? 'up' : 'down'}">${b.mroi >= 0 ? '+' : ''}${fmtN(b.mroi * 100)}%</td><td class="${s.his >= 0 ? 'up' : 'down'}">${f(s.hisPct)}<br><span style="color:var(--muted);font-size:10px">${fmtUsd(s.his)}</span></td><td class="${s.ret >= 0 ? 'up' : 'down'}"><b>$${fmtN(eq)}</b> (${f(s.ret)})</td><td><div class="hbar"><i style="left:0;width:${w}%;background:${s.ret >= 0 ? 'linear-gradient(90deg,#8fd694,#c9d64f)' : 'linear-gradient(90deg,#e0806e,#c96a5a)'}"></i></div></td><td class="${gap >= 0 ? 'up' : 'down'}">${f(gap)}</td><td>${s.fills} · ${s.trades}${s.liqs ? ` <span class="down">☠${s.liqs}</span>` : ''}</td><td class="down">−${s.dd.toFixed(1)}%</td><td>${st}</td></tr>`; }).join('');
+  $('mirrorNote').innerHTML = `One bot per wallet, sized by exposure ratio (our notional = his × $${fmtN(C_DEP)} ÷ his account value at the freeze), acting at the close of the 1-minute bar that contains his fill, mirroring every add, trim, close and reversal, no stop of our own. <b>His forward</b> is his own realised P&L since the freeze (open positions excluded) as a % of that account value; <b>copying him</b> is our seat marked to the last close after 0.07%/side, funding and wick liquidation; the <b>gap</b> is what copying costs — delay, fees, funding. ✂ marks wallets that made money while copying them did not. Beating the seat average is not the test; beating the BTC line is${bm ? `, and the desk's excess over it is <b>${f(excess)}</b>` : ''}.`;
+}
 function renderArena() {
   const a = state.arena; const scored = a.pool.map(g => { const log = []; return { g, s: C_score(g, g.birth, a.now, log), log }; }).sort((x, y) => y.s.ret - x.s.ret || x.g.id.localeCompare(y.g.id));
   state.scored = scored;
@@ -702,10 +837,10 @@ function renderAll() {
   const n24 = state.events.filter(e => e.t >= Date.now() - DAY).length;
   $('cTape').textContent = `${state.events.length} fills`; $('cTapeD').textContent = `${n24} in 24h · ${new Set(state.events.map(e => e.coin)).size} coins`;
   const d = state.px['BTC']; if (d && d.c.length) { const n = d.c.length; const px = lastPx('BTC'), p24 = n > 1441 && d.has[n - 1441] ? (px / d.c[n - 1441] - 1) * 100 : 0; $('cPrice').textContent = '$' + fmtN(px); $('cPriceD').innerHTML = `<span class="${p24 >= 0 ? 'up' : 'down'}">${p24 >= 0 ? '+' : ''}${p24.toFixed(2)}%</span> 24h`; }
-  renderHeat(); renderRoster(); renderTape(); renderArena();
+  renderHeat(); renderRoster(); renderTape(); renderArena(); renderMirror();
   $('foot').innerHTML = `Copy Desk v${COPY_VER} · last sync: ${state.live.snapCount ?? 0} WebSocket snapshots, ${state.sync.rest || 0} REST gap-fill(s), socket ${state.live.ws || 'not open'} · seed ${COPY_SEED} · ${C_SEATS} copy bots (${Object.keys(G).length} genes: who / delay / consensus / slots / leverage / stop / exit) + ${C_BENCH}-bot bench · weekly evolution + roster re-freeze on Monday 00:00 UTC · leaders' fills and prices from Hyperliquid's public API · every market a leader touches is copyable (spot excluded) · paper only.<br>Snapshots: ${state.snapFiles.join(', ')}${state.live.syncErr ? ` · ${state.live.syncErr} trader(s) failed to sync this load` : ''}.`;
 }
-window.COPY = { state, replay: C_replay, score: C_score, desc: C_desc, bench: C_bench, fillCount() { let n = 0; for (const arr of state.fills.values()) n += arr.length; return n; }, exportFills() { const o = {}; for (const [a, arr] of state.fills) if (arr.length) o[a] = arr; return JSON.stringify(o); } };
+window.COPY = { state, replay: C_replay, score: C_score, desc: C_desc, bench: C_bench, mirror: M_replay, mscore: M_score, fillCount() { let n = 0; for (const arr of state.fills.values()) n += arr.length; return n; }, exportFills() { const o = {}; for (const [a, arr] of state.fills) if (arr.length) o[a] = arr; return JSON.stringify(o); } };
 
 /* ---------- real-time: Hyperliquid WebSocket userFills push for every roster address ---------- */
 const WS = { sock: null, pending: 0, timer: null, ping: null, lastMsg: 0, retries: 0, snap: null,
@@ -731,7 +866,7 @@ function setConn() { const dot = $('connDot'), txt = $('connTxt'); if (!dot || s
 let refreshing = false;
 async function refresh(why) {
   if (refreshing || state.booting) return; refreshing = true;
-  try { buildEvents(); await loadBars(); state.arena = C_replay(); state.lastRender = Date.now(); renderAll(); WS.pending = 0; setConn(); }
+  try { buildEvents(); await loadBars(); state.arena = C_replay(); state.mirror = M_replay(); state.lastRender = Date.now(); renderAll(); WS.pending = 0; setConn(); }
   catch (e) { const b = $('errBanner'); b.className = 'banner warn'; b.textContent = 'Refresh failed (' + why + '): ' + e.message; }
   refreshing = false;
 }
@@ -747,7 +882,7 @@ async function boot() {
     buildEvents();
     txt.textContent = 'Loading Hyperliquid 1m prices…';
     await loadBars();
-    state.arena = C_replay(); state.lastRender = Date.now(); renderAll();
+    state.arena = C_replay(); state.mirror = M_replay(); state.lastRender = Date.now(); renderAll();
     state.booting = false;
     txt.textContent = cached ? 'Cached view · syncing new fills…' : 'First load · syncing fills…';
     syncFills(msg => { txt.textContent = 'Syncing · ' + msg; }).then(() => refresh('sync')).catch(e => { const b = $('errBanner'); b.className = 'banner warn'; b.textContent = 'Fill sync failed: ' + e.message; setConn(); });
