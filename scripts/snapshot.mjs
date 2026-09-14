@@ -6,6 +6,7 @@ import { chromium } from 'playwright';
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 
 const BASE = process.env.SITE || 'https://kannnne.github.io/quant-terminal';
+const TRADOOOR = process.env.TRADOOOR || 'https://tradooor.rekt.com';   // tests point this at a local replay of their API
 const OUT = 'data/live';
 const H1 = 3600e3, DAY = 86400e3;
 const now = Date.now();
@@ -58,6 +59,9 @@ async function snapCopy() {
       heatTag: (document.getElementById('heatTag') || {}).textContent, arenaTag: (document.getElementById('arenaTag') || {}).textContent, arenaNote: (document.getElementById('arenaNote') || {}).textContent,
       arenaTop: scored, groups: { who: grp('who'), delay: grp('delay'), k: grp('k'), exit: grp('exit'), lev: grp('lev'), sl: grp('sl') },
       seats: { n: all.length, profitable: all.filter(x => x.s.ret > 0).length, inPos: all.filter(x => x.s.inPos > 0).length, avg: all.length ? +(all.reduce((s, x) => s + x.s.ret, 0) / all.length).toFixed(2) : null, gen: S.arena && S.arena.gen, retired: S.arena && S.arena.deaths },
+      // Copy Desk v2.3: buy-and-hold BTC from the same freeze, our fees and funding. The arena runs
+      // 90%+ long, so the seat average only means something next to this line — `excess` is the test.
+      bench: S.bench ? { coin: S.bench.coin, lev: S.bench.lev, ret: +S.bench.ret.toFixed(2), gross: +S.bench.gross.toFixed(2), cost: +S.bench.cost.toFixed(2), entry: S.bench.entry, px: S.bench.px } : null,
       feed: [...document.querySelectorAll('#feed .frow')].slice(0, 25).map(r => r.innerText.replace(/\s+/g, ' ').trim()),
     };
   });
@@ -128,6 +132,58 @@ async function snapRekt() {
   await page.close(); return d;
 }
 
+/* ---------------- tradooor.rekt.com · REKT's own live game (control group) ---------------- */
+// Read-only observation of the game our Archetype Arena is a port of. We watch the MECHANISM, not the
+// individuals: per-archetype survival across their 10,000 seats is the control our 100 seats are measured
+// against. Their engine forces leverage up (squeeze floor only ever rises) and ours does not, so their
+// leaderboard is never a copy list -- see claude/影子帳戶v2-tradooor頭部帳簿重放.md for why.
+//
+// Playwright is the only way in: robots.txt blocks plain fetchers and the API sends no CORS header, so the
+// calls have to happen inside a real page on their own origin. Everything here is wrapped -- if their API
+// shape changes or the season ends, this records an error and the other three pages are untouched.
+async function snapTradooor() {
+  const page = await ctx.newPage(); const t0 = Date.now();
+  await page.goto(TRADOOOR + '/', { waitUntil: 'domcontentloaded', timeout: 60e3 });
+  const d = await page.evaluate(async () => {
+    const D = 1e8;                                   // their integers are 8-decimal fixed point
+    const usd = v => +(Number(v) / D).toFixed(2);
+    const j = async u => { const r = await fetch(u, { headers: { accept: 'application/json' } }); if (!r.ok) throw new Error(u + ' HTTP ' + r.status); return r.json(); };
+    const b = await j('/api/w?u=board&n=400');
+    const board = {
+      meta: {
+        tick: b.tick, epoch: b.epoch, alive: b.alive, population: b.populationCount,
+        finished: !!b.finished, paused: !!b.paused, squeezeFloorX: b.squeezeFloorCenti / 100,
+        maxLevX: b.maxLeverageCenti / 100, startCashUsd: usd(b.startingCashUsd),
+        engine: b.season && b.season.engineVersion, dnaRoot: b.season && b.season.dnaRoot,
+      },
+      archetypes: Object.fromEntries(Object.entries(b.archetypes || {}).map(([k, v]) => [k, {
+        alive: v.alive, total: v.total, alivePct: v.total ? +(100 * v.alive / v.total).toFixed(1) : null,
+        avgPnlPct: +(v.avgPnlBps / 100).toFixed(1), bestId: v.best && v.best.tokenId, bestRank: v.best && v.best.rank,
+      }])),
+      top: b.leaders.slice(0, 15).map(r => ({ rank: r.rank, id: r.tokenId, arch: r.archetype, eq: usd(r.equityUsd), eq1h: usd(r.equity1hUsd) })),
+      edge: (b.onTheEdge || []).slice(0, 10).map(r => ({ rank: r.rank, id: r.tokenId, arch: r.archetype, eq: usd(r.equityUsd) })),
+      boardN: b.leaders.length,
+    };
+    // Fill-level tape for the top 12, for the shadow-desk replay. Overwritten each run, never accumulated.
+    const pairs = [], reasons = [];
+    const idx = (a, v) => { let i = a.indexOf(v); if (i < 0) { i = a.length; a.push(v); } return i; };
+    const traders = {};
+    for (const r of b.leaders.slice(0, 12)) {
+      try {
+        const t = await j('/api/w?u=trades&id=' + r.tokenId);
+        traders[r.tokenId] = {
+          rank: r.rank, arch: r.archetype, n: t.fillsTotal, eq: usd(t.book.equityUsd), peak: usd(t.book.peakEquityUsd),
+          f: t.fills.map(x => [x.tick, x.ts, idx(pairs, x.pair), x.dir, usd(x.notionalDeltaUsd), usd(x.fillPrice), usd(x.realizedPnlUsd), idx(reasons, x.reason), x.levAfterCenti, usd(x.equityAfterUsd)]),
+        };
+      } catch (e) { traders[r.tokenId] = { rank: r.rank, error: String(e.message).slice(0, 120) }; }
+    }
+    return { board, fills: { pairs, reasons, cols: ['tick', 'ts', 'pairIdx', 'dir', 'notionalDeltaUsd', 'fillPrice', 'realizedPnlUsd', 'reasonIdx', 'levAfterCenti', 'equityAfterUsd'], traders } };
+  });
+  const r = { ...d.board, loadMs: Date.now() - t0 };
+  r._fills = d.fills;                                // split out by the writer below, not kept in tradooor.json
+  await page.close(); return r;
+}
+
 // Order matters twice over, and the two constraints pull against each other.
 //  1. Copy Desk MUST run before Signal Desk: it writes the leader-flow board into localStorage (shared ctx), and
 //     Signal Desk's attention x smart-money cross-check reads it from there. Putting Signal first on 2026-09-07
@@ -135,7 +191,11 @@ async function snapRekt() {
 //  2. But Copy Desk's 100 leader-address queries drain the runner IP's Hyperliquid rate budget, which then starved
 //     Signal Desk's price fallback and killed the page outright (2026-09-07 04:54 and 07:58).
 // So: Copy, then a cooldown longer than Hyperliquid's 1-minute rate window, then Signal, then REKT.
-for (const [name, fn] of [['copy', snapCopy], ['signals', snapSignals], ['rekt', snapRekt]]) {
+// tradooor goes last: it is an outside site, nothing else depends on it, and a failure there must not cost
+// us the three pages that matter.
+const ONLY = (process.env.ONLY || '').split(',').map(s => s.trim()).filter(Boolean);   // ONLY=tradooor for a targeted run
+for (const [name, fn] of [['copy', snapCopy], ['signals', snapSignals], ['rekt', snapRekt], ['tradooor', snapTradooor]]) {
+  if (ONLY.length && !ONLY.includes(name)) continue;
   if (name === 'signals') { log('cooldown 75s to clear the Hyperliquid rate window'); await new Promise(r => setTimeout(r, 75e3)); }
   try { log('snapshot', name); out.pages[name] = await fn(); log(name, 'ok in', out.pages[name].loadMs, 'ms'); }
   catch (e) { log(name, 'FAILED', e.message); out.pages[name] = { error: String(e.message).slice(0, 300) }; }
@@ -144,11 +204,37 @@ await browser.close();
 
 /* ---------------- write files ---------------- */
 const write = (f, obj) => { const s = JSON.stringify(obj); writeFileSync(`${OUT}/${f}`, s); log('wrote', f, s.length, 'bytes'); };
-for (const k of ['copy', 'signals', 'rekt']) write(`${k}.json`, { taken: now, takenIso: out.takenIso, page: k, ...out.pages[k] });
-write('latest.json', { taken: now, takenIso: out.takenIso, site: BASE, pages: Object.fromEntries(Object.entries(out.pages).map(([k, v]) => [k, v.error ? { error: v.error } : { ok: !/^Error/.test(v.conn || ''), loadMs: v.loadMs, conn: v.conn, banner: v.banner }])) });
+// only rewrite what this run actually snapshotted, so a targeted ONLY= run never blanks the other files
+for (const k of ['copy', 'signals', 'rekt']) if (out.pages[k]) write(`${k}.json`, { taken: now, takenIso: out.takenIso, page: k, ...out.pages[k] });
 
-// rolling hourly history (kept small: one line per hour, 14 days)
+// tradooor: the small board goes to data/live/tradooor.json (what rekt.html renders); the fill tape goes to
+// its own file so the board stays cheap to fetch. Neither accumulates -- both are overwritten every run.
+// When their season ends we keep one dated copy, because after the closing bell that tape is gone for good.
+{
+  const t = out.pages.tradooor || {};
+  const fills = t._fills; delete t._fills;
+  write('tradooor.json', { taken: now, takenIso: out.takenIso, page: 'tradooor', src: 'tradooor.rekt.com', ...t });
+  if (fills) {
+    write('tradooor-fills.json', { taken: now, takenIso: out.takenIso, meta: t.meta || null, ...fills });
+    if (t.meta && t.meta.finished) {
+      const f = `data/tradooor-final-${out.takenIso.slice(0, 10)}.json`;
+      if (!existsSync(f)) { writeFileSync(f, JSON.stringify({ taken: now, takenIso: out.takenIso, board: t, ...fills })); log('season finished — archived', f); }
+    }
+  }
+}
+// latest.json is the one file the report agents always read, so the tradooor headline rides along inside it
+// rather than becoming a sixth URL they would have to be told about.
+const td = out.pages.tradooor || {};
+write('latest.json', {
+  taken: now, takenIso: out.takenIso, site: BASE,
+  pages: Object.fromEntries(Object.entries(out.pages).filter(([k]) => k !== 'tradooor').map(([k, v]) => [k, v.error ? { error: v.error } : { ok: !/^Error/.test(v.conn || ''), loadMs: v.loadMs, conn: v.conn, banner: v.banner }])),
+  tradooor: td.error ? { error: td.error } : { ...(td.meta || {}), archetypes: td.archetypes || null, top: (td.top || []).slice(0, 5) },
+});
+
+// rolling hourly history (kept small: one line per hour, 14 days).
+// A targeted ONLY= run has no business appending a row full of nulls to it.
 const hf = `${OUT}/history.json`;
+if (ONLY.length) { log('ONLY run — history.json left alone'); process.exit(0); }
 let hist = []; try { if (existsSync(hf)) hist = JSON.parse(readFileSync(hf, 'utf8')); } catch (e) { hist = []; }
 const c = out.pages.copy || {}, s = out.pages.signals || {}, r = out.pages.rekt || {};
 hist.push({
