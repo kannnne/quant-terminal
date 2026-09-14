@@ -191,6 +191,20 @@
     <div class="chip" style="--c:var(--vio)"><div class="ring">⚔</div><div><div class="k">Archetype Arena</div><div class="v" id="cArena" style="font-size:13px">–</div><div class="d" id="cArenaD">–</div></div></div>
   </div>
 
+  <div class="card g-teal">
+    <h2>tradooor · REKT's own live game <span class="tag" id="tdTag">–</span>
+      <span class="legend"><span><i style="background:var(--teal)"></i>Control group</span><span><i style="background:var(--gold)"></i>Watched, never copied</span></span></h2>
+    <div class="two">
+      <div style="overflow-x:auto"><table>
+        <thead><tr><th style="text-align:left">Archetype</th><th>Their alive</th><th>Survival</th><th>Their avg</th><th>Our avg</th></tr></thead>
+        <tbody id="tdArch"></tbody></table></div>
+      <div style="overflow-x:auto"><table>
+        <thead><tr><th>#</th><th>tradooor</th><th style="text-align:left">Archetype</th><th>Equity</th><th>1h &Delta;</th></tr></thead>
+        <tbody id="tdTop"></tbody></table></div>
+    </div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:8px" id="tdNote">–</div>
+  </div>
+
   <div class="card g-red">
     <h2>Shadow Desks · REKT dry-run top 10, replayed on Hyperliquid with our money rules <span class="tag" id="shadowTag">–</span></h2>
     <div style="overflow-x:auto"><table>
@@ -225,6 +239,7 @@
 <script>
 /* ===================== PAGE 3 · REKT LAB ===================== */
 const $ = id => document.getElementById(id);
+const esc = v => String(v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const BAR = 300e3, H1 = 3600e3, DAY = 86400e3;
 const REKT_START = Date.UTC(2026, 7, 31);          // Monday UTC · same opening bell as the REKT dry run
 const WARM = 3 * DAY;
@@ -240,6 +255,7 @@ const MID_N = 27, TAIL_N = 60;                        // mid caps = next 27 by v
 const WL = [[0, 0], [0, 0], [8, 0], [2, 6], [0, 10]]; // allegiance tier -> [mid-cap picks, tail picks] drawn at birth, on top of the fixed majors below
 const WL_MAJ = [['BTC'], MAJORS, MAJORS, ['BTC'], []];
 const SHADOW_FILE = 'data/rekt-top10-2026-09-05.json';
+const TD_FILE = 'data/live/tradooor.json';        // written by scripts/snapshot.mjs, refreshed hourly
 const ARCH = { MOMENTUM_APE: 'Momentum Ape', MEAN_REVERTER: 'Mean Reverter', DEGEN_SCALPER: 'Degen Scalper', RANGE_TRADER: 'Range Trader', DIAMOND_HANDS: 'Diamond Hands', TILT_MONSTER: 'Tilt Monster' };
 const ARCHS = Object.keys(ARCH);
 const TIER = { nerves: ['Nerveless', 'Steel', 'Steady', 'Jumpy', 'Paranoid'], aggr: ['Pacifist', 'Timid', 'Measured', 'Aggressive', 'Feral'], greed: ['Ascetic', 'Modest', 'Hungry', 'Ravenous', 'Insatiable'], alleg: ['Blue-chip purist', 'Majors tourist', 'Diversified', 'Tail believer', 'Tail maxi'] };
@@ -497,10 +513,15 @@ function renderArena() {
   $('arenaNote').textContent = `Forward-only since ${new Date(REKT_START).toISOString().slice(0, 10)} (REKT's own opening bell). Seat average ${avg >= 0 ? '+' : ''}${avg.toFixed(2)}% · median ${med >= 0 ? '+' : ''}${med.toFixed(2)}% · Hyperliquid 5m · fee 0.07%/side + funding drag · liquidation on the wick · no squeeze, leverage 1–10x by the desk's own dials.`;
   $('cArena').textContent = `Gen ${a.gen} · ${inPos}/${R_SEATS} in position`; $('cArenaD').textContent = `Leader ${scored[0].g.id} ${scored[0].s.ret >= 0 ? '+' : ''}${scored[0].s.ret.toFixed(2)}%`;
   // archetype standings, REKT-style
+  // Frozen reference: REKT's 2026-08-31 → 09-05 dry run. Used only when no live tradooor snapshot is on hand;
+  // once data/live/tradooor.json exists, each card shows their CURRENT season instead of this 9-day-old constant.
   const REKT_REF = { RANGE_TRADER: [28, -32.8], MOMENTUM_APE: [6, -60.1], MEAN_REVERTER: [29, -83.1], TILT_MONSTER: [29, -81.1], DEGEN_SCALPER: [4, -99.0], DIAMOND_HANDS: [3, -26.4] };
+  const tdA = state.td && state.td.archetypes || null;
+  const refLine = k => { const L = tdA && tdA[k]; return L ? `tradooor live: ${fmtN(L.alivePct, 1)}% alive · avg ${fmtN(L.avgPnlPct, 1)}%` : `REKT dry run: ${REKT_REF[k][0]}% alive · avg ${REKT_REF[k][1]}%`; };
   const born = {}, alive = {}; for (const g of a.pool) alive[g.arch] = (alive[g.arch] || 0) + 1; for (const e of a.evo) if (e.act === 'RETIRED') born[e.g.arch] = (born[e.g.arch] || 0) + 1;
   const rows = ARCHS.map(k => { const arr = scored.filter(x => x.g.arch === k); const n = arr.length, d = born[k] || 0; const avgR = n ? arr.reduce((s, x) => s + x.s.ret, 0) / n : NaN; const best = arr.slice().sort((p, q) => q.s.ret - p.s.ret)[0]; return { k, n, d, alivePct: n + d ? n / (n + d) * 100 : 0, avg: avgR, best, tr: arr.reduce((s, x) => s + x.s.trades, 0) }; }).sort((p, q) => (q.avg || -1e9) - (p.avg || -1e9));
-  $('species').innerHTML = rows.map(r => `<div class="sp"><b>${ARCH[r.k]}</b> · ${r.n} seated · ${r.d} retired<br><span class="${r.avg >= 0 ? 'up' : 'down'}">avg ${Number.isNaN(r.avg) ? '–' : (r.avg >= 0 ? '+' : '') + r.avg.toFixed(2) + '%'}</span> · ${r.tr} trades · ${r.alivePct.toFixed(0)}% alive<div class="bar"><i style="width:${Math.min(100, Math.abs(r.avg || 0) / Math.max(1, ...rows.map(x => Math.abs(x.avg || 0))) * 100)}%;${(r.avg || 0) < 0 ? 'background:linear-gradient(90deg,#e0806e,#c96a5a)' : ''}"></i></div>REKT dry run: ${REKT_REF[r.k][0]}% alive · avg ${REKT_REF[r.k][1]}%${r.best ? `<br>best ${r.best.g.id} ${r.best.s.ret >= 0 ? '+' : ''}${r.best.s.ret.toFixed(1)}%` : ''}</div>`).join('');
+  state.archRows = rows;                       // the tradooor card reads these for its "our avg" column
+  $('species').innerHTML = rows.map(r => `<div class="sp"><b>${ARCH[r.k]}</b> · ${r.n} seated · ${r.d} retired<br><span class="${r.avg >= 0 ? 'up' : 'down'}">avg ${Number.isNaN(r.avg) ? '–' : (r.avg >= 0 ? '+' : '') + r.avg.toFixed(2) + '%'}</span> · ${r.tr} trades · ${r.alivePct.toFixed(0)}% alive<div class="bar"><i style="width:${Math.min(100, Math.abs(r.avg || 0) / Math.max(1, ...rows.map(x => Math.abs(x.avg || 0))) * 100)}%;${(r.avg || 0) < 0 ? 'background:linear-gradient(90deg,#e0806e,#c96a5a)' : ''}"></i></div>${refLine(r.k)}${r.best ? `<br>best ${r.best.g.id} ${r.best.s.ret >= 0 ? '+' : ''}${r.best.s.ret.toFixed(1)}%` : ''}</div>`).join('');
   // allegiance standings: does the coin tier (majors vs mid caps vs the tail) decide survival?
   const al = [0, 1, 2, 3, 4].map(t => { const arr = scored.filter(x => x.g.alleg === t); const n = arr.length; return { t, n, avg: n ? arr.reduce((s, x) => s + x.s.ret, 0) / n : NaN, tr: arr.reduce((s, x) => s + x.s.trades, 0), liqs: arr.reduce((s, x) => s + x.s.liqs, 0), prof: arr.filter(x => x.s.ret > 0).length }; });
   const amax = Math.max(1, ...al.map(x => Math.abs(x.avg || 0)));
@@ -532,15 +553,58 @@ function renderShadow() {
   $('shadowTag').textContent = `${S.source} · ${rows.length} desks · ${nUsed}/${nAll} fills replayable on Hyperliquid perps`;
   $('shadowNote').innerHTML = `Each desk starts with our $1,000 (their $10,000 stack scaled ×0.1) and its <b>own</b> fill log is replayed at the Hyperliquid 5m close of the same candle, with our 0.07%/side fee, funding drag and a 0.5%-of-notional maintenance line. Fills on coins Hyperliquid does not list are skipped (${nAll - nUsed}). Their reported result averaged <b>${avgTheir >= 0 ? '+' : ''}${avgTheir.toFixed(0)}%</b>; on our venue and costs the same fills average <b>${avgAll >= 0 ? '+' : ''}${avgAll.toFixed(0)}%</b> (${dead}/${rows.length} blown up); dropping every squeeze-forced fill leaves <b>${avgN >= 0 ? '+' : ''}${avgN.toFixed(0)}%</b> (${deadN} blown up). The gap between the three columns is how much of the "top 10" was venue, forced leverage and survivorship rather than method.`;
 }
+/* tradooor's own live game, as a control group for the arena above.
+   Two things are worth reading here and neither of them is the leaderboard:
+     - survival by archetype across their 10,000 seats, next to ours across 100;
+     - how far their engine has pushed the squeeze floor, which is what their board's returns are made of.
+   The top-15 list is shown because Kane asks about specific ids, and each row carries the drawdown from
+   peak so a book that has already given most of it back cannot look like a winner. */
+function renderTradooor() {
+  const t = state.td;
+  if (!t || t.error || !t.meta) {
+    $('tdTag').textContent = t && t.error ? 'unavailable' : 'no snapshot yet';
+    $('tdArch').innerHTML = `<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:14px">No tradooor snapshot yet — scripts/snapshot.mjs writes ${TD_FILE} on the hour.${t && t.error ? '<br>Last error: ' + esc(String(t.error).slice(0, 140)) : ''}</td></tr>`;
+    $('tdTop').innerHTML = ''; $('tdNote').textContent = 'Their API sends no CORS header and robots.txt blocks plain fetchers, so this page can only ever see what the headless snapshot brought back.';
+    return;
+  }
+  const m = t.meta, A = t.archetypes || {}, ours = {};
+  for (const r of (state.archRows || [])) ours[r.k] = r;
+  const age = t.taken ? Math.round((Date.now() - t.taken) / 6e4) : null;
+  $('tdTag').textContent = `${m.finished ? 'season closed' : 'tick ' + fmtN(m.tick, 0)} · ${fmtN(m.alive, 0)}/${fmtN(m.population, 0)} alive · squeeze floor ${m.squeezeFloorX}x · engine ${m.engine}${age != null ? ' · ' + (age < 90 ? age + 'm ago' : Math.round(age / 60) + 'h ago') : ''}`;
+
+  const order = ARCHS.slice().sort((a, b) => ((A[b] || {}).alivePct || 0) - ((A[a] || {}).alivePct || 0));
+  $('tdArch').innerHTML = order.map(k => {
+    const L = A[k], o = ours[k];
+    if (!L) return '';
+    const w = Math.min(100, (L.alivePct || 0) / Math.max(1, ...order.map(x => (A[x] || {}).alivePct || 0)) * 100);
+    return `<tr><td style="text-align:left"><b>${ARCH[k] || k}</b></td>`
+      + `<td>${fmtN(L.alive, 0)}/${fmtN(L.total, 0)}</td>`
+      + `<td><span class="${L.alive ? '' : 'down'}">${fmtN(L.alivePct, 1)}%</span><div class="bar" style="margin:3px 0 0"><i style="width:${w}%${L.alive ? '' : ';background:linear-gradient(90deg,#e0806e,#c96a5a)'}"></i></div></td>`
+      + `<td class="${L.alive ? (L.avgPnlPct >= 0 ? 'up' : 'down') : 'down'}">${L.alive ? (L.avgPnlPct >= 0 ? '+' : '') + fmtN(L.avgPnlPct, 1) + '%' : 'wiped out'}</td>`   /* their avg is 0 once an archetype is extinct, which reads as flat rather than dead */
+      + `<td class="${o && o.avg >= 0 ? 'up' : 'down'}">${o && !Number.isNaN(o.avg) ? (o.avg >= 0 ? '+' : '') + fmtN(o.avg, 1) + '%' : '–'}</td></tr>`;
+  }).join('');
+
+  $('tdTop').innerHTML = (t.top || []).slice(0, 15).map(r => {
+    const ret = m.startCashUsd ? (r.eq / m.startCashUsd - 1) * 100 : 0;
+    const h = r.eq - r.eq1h;
+    return `<tr><td>#${r.rank}</td><td><b>${r.id}</b></td><td style="text-align:left">${ARCH[r.arch] || r.arch}</td>`
+      + `<td class="${ret >= 0 ? 'up' : 'down'}">${ret >= 0 ? '+' : ''}${fmtN(ret, 0)}%</td>`
+      + `<td class="${h >= 0 ? 'up' : 'down'}">${h >= 0 ? '+' : '\u2212'}$${fmtN(Math.abs(h), 0)}</td></tr>`;
+  }).join('') || `<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:14px">board empty</td></tr>`;
+
+  const best = order[0], worst = order[order.length - 1];
+  $('tdNote').innerHTML = `Their game and ours differ in exactly the two things that decide the outcome: <b>their minimum leverage only ever rises</b> (floor ${m.squeezeFloorX}x, ceiling ${m.maxLevX}x — the engine force-opens positions to hold it), and they start on $${fmtN(m.startCashUsd, 0)} per seat where we start on $${fmtN(R_DEP, 0)} with a 0.07%/side fee wall and a 1–10x band. So the right column is the only thing on this card that is ours, and the leaderboard on the right is <b>a record, not a copy list</b> — replaying their top 12 books through our rules leaves +1% on average with 3 of 12 bankrupt, and 9 of the 10 books this page's Shadow Desks replay from their previous season are now dead. Best survival this season: <b>${ARCH[best] || best} ${fmtN((A[best] || {}).alivePct, 1)}%</b>; worst: <b>${ARCH[worst] || worst} ${fmtN((A[worst] || {}).alivePct, 1)}%</b>.`;
+}
+
 function renderAll() {
   if ($('app').classList.contains('loading')) { $('app').classList.remove('loading'); $('app').innerHTML = $('tpl').innerHTML; }
   const d = state.px.BTC; if (d) { const n = d.c.length; const px = lastPx('BTC'), p24 = n > 289 && d.has[n - 289] ? (px / d.c[n - 289] - 1) * 100 : 0; $('cPrice').textContent = '$' + fmtN(px); $('cPriceD').innerHTML = `<span class="${p24 >= 0 ? 'up' : 'down'}">${p24 >= 0 ? '+' : ''}${p24.toFixed(2)}%</span> 24h`; }
-  renderArena(); renderShadow();
+  renderArena(); renderTradooor(); renderShadow();   // tradooor after the arena: it reads state.archRows
   const S = state.shadow; if (S) { $('cShadow').textContent = `${S.desks.length} desks`; $('cShadowD').textContent = 'REKT dry-run top 10 · replayed on Hyperliquid'; }
   $('cSpecies').textContent = `${ARCHS.length} archetypes`; $('cSpeciesD').textContent = '4 dials × 5 tiers · 100 desks + 300 bench';
-  $('foot').innerHTML = `REKT Lab v${REKT_VER} · seed ${REKT_SEED} · archetype pack ported from tradooor.rekt.com (engine 0.13.0) · pyramid adds, ATR trailing stops, fear/time stops, multi-book desks · no squeeze, 1–10x · weekly evolution on Monday 00:00 UTC · paper only.<br>Data: Hyperliquid 5m candles (${state.live.priced || 0} markets priced) since ${new Date(REKT_START - WARM).toISOString().slice(0, 10)} (cached in IndexedDB) · shadow fills from ${SHADOW_FILE}.`;
+  $('foot').innerHTML = `REKT Lab v${REKT_VER} · seed ${REKT_SEED} · archetype pack ported from tradooor.rekt.com (engine 0.13.0) · pyramid adds, ATR trailing stops, fear/time stops, multi-book desks · no squeeze, 1–10x · weekly evolution on Monday 00:00 UTC · paper only.<br>Data: Hyperliquid 5m candles (${state.live.priced || 0} markets priced) since ${new Date(REKT_START - WARM).toISOString().slice(0, 10)} (cached in IndexedDB) · shadow fills from ${SHADOW_FILE}${state.td && state.td.meta ? ' · tradooor board from ' + TD_FILE + ' (' + state.td.takenIso.slice(0, 16) + 'Z)' : ''}.`;
 }
-window.REKT = { state, replay: R_replay, score: R_score, desc: R_desc, shadow: shadowReplay };
+window.REKT = { state, replay: R_replay, score: R_score, desc: R_desc, shadow: shadowReplay, render: renderAll };
 
 function genesisCoins() {   // the coin set of the first 400 draws (seeded, so identical to R_replay's first 400) — what must be priced before replay
   const rng = R_rng(REKT_SEED); R_ID = 0; const set = new Set(MAJORS);
@@ -554,6 +618,9 @@ async function boot() {
     await loadUniverses();
     const sh = await getJSON(SHADOW_FILE + '?v=' + Math.floor(Date.now() / H1)).catch(() => null);
     state.shadow = sh;
+    // tradooor's own live board, written by the hourly snapshot (their API sends no CORS header, so the
+    // page can never fetch it directly). Optional on purpose: if it is missing, the arena renders as before.
+    state.td = await getJSON(TD_FILE + '?v=' + Math.floor(Date.now() / (H1 / 4))).catch(() => null);
     const from = REKT_START - WARM, to = Date.now();
     const grid = []; for (let t = from; t + BAR <= to; t += BAR) grid.push(t); state.grid = grid;
     for (const c of Object.keys(state.rows)) if (state.px[c] && state.px[c].c.length !== grid.length) { state.px[c] = denseFrom(state.rows[c], from, grid.length); }
