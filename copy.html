@@ -248,7 +248,7 @@ const ROSTER_MONDAY0 = Date.UTC(2026, 8, 7);
 const G = { who: ['all', 'top10', 'top25', 'whales', 'steady', 'lowlev'], delay: [1, 5, 15], k: [1, 1, 2, 3], maxPos: [3, 5], lev: [1, 1, 2, 2, 3, 5], sl: [0, 0.03, 0.05, 0.10], exit: ['mirror', 'mirror', 'h4', 'h24', 'h72'] };
 const WHO_NM = { all: 'all 100', top10: 'top 10 by ROI', top25: 'top 25 by ROI', whales: '25 biggest accounts', steady: 'steady (win ≥55%, ≥20 closes)', lowlev: 'low leverage (≤5x)' };
 const CONSENSUS_WIN = 4 * H1;
-const COPY_VER = '2.3';
+const COPY_VER = '2.4';
 
 function C_rng(a) { return function() { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const pick = (rng, arr) => arr[Math.floor(rng() * arr.length) % arr.length];
@@ -282,7 +282,14 @@ async function loadRosters() {
   }
   if (!rosters.length) throw new Error('no roster snapshot found');
   rosters.sort((a, b) => a.frozen - b.frozen);
-  for (const r of rosters) { r.traders.forEach((t, i) => { t.rank = i + 1; }); r.uni = null; /* v2: no venue filter */ r.byA = new Map(r.traders.map(t => [t.a, t])); }
+  for (const r of rosters) {
+    r.traders.forEach((t, i) => { t.rank = i + 1; }); r.uni = null; /* v2: no venue filter */ r.byA = new Map(r.traders.map(t => [t.a, t]));
+    // ROI scale. Rosters built by scripts/roster.mjs store Hyperliquid's raw fraction and say so (roiScale: 1); the
+    // hand-built 2026-09-05 file stored mroi already x100 (1263.18 for a +1,263% month), which this table then
+    // showed as 126,318%. Normalise the legacy file to the fraction the renderer expects. Display only: whoSet()
+    // never reads mroi, so bot behaviour is unchanged.
+    if (r.roiScale !== 1) for (const t of r.traders) if (t.mroi != null) t.mroi = t.mroi / 100;
+  }
   state.rosters = rosters; state.snapFiles = state.snapFiles.concat(fillFiles);
 }
 function rosterAt(t) { let r = state.rosters[0]; for (const x of state.rosters) if (x.frozen <= t) r = x; return r; }
@@ -324,7 +331,11 @@ async function syncFills(onProgress) {
     const snap = WS.snap.get(a);
     if (!snap) { need.push(a); continue; }                              // no snapshot arrived
     const oldest = snap.length ? snap[0][0] : Infinity;                  // snapshot sorted ascending
-    const covered = snap.length < 500 || oldest <= Math.max(lastKnown, state.rosters[0].frozen);   // small snapshot = complete; big one must overlap what we know
+    // A small snapshot only proves completeness when we already hold this address's history (warm cache: Kane's
+    // browser). On a cold browser -- the hourly GitHub runner, every run -- `known` is empty, and a 300-fill snapshot
+    // is just the last 300 fills: trusting it silently dropped everything back to the freeze for ~15 addresses per
+    // run, which is why the runner's tape sat at 60-85% of the real one and its arena disagreed with the live page.
+    const covered = (known.length > 0 && snap.length < 500) || oldest <= Math.max(lastKnown, state.rosters[0].frozen);
     if (!covered) need.push(a);
   }
   state.sync.total = need.length;
@@ -694,7 +705,7 @@ function renderAll() {
   renderHeat(); renderRoster(); renderTape(); renderArena();
   $('foot').innerHTML = `Copy Desk v${COPY_VER} · last sync: ${state.live.snapCount ?? 0} WebSocket snapshots, ${state.sync.rest || 0} REST gap-fill(s), socket ${state.live.ws || 'not open'} · seed ${COPY_SEED} · ${C_SEATS} copy bots (${Object.keys(G).length} genes: who / delay / consensus / slots / leverage / stop / exit) + ${C_BENCH}-bot bench · weekly evolution + roster re-freeze on Monday 00:00 UTC · leaders' fills and prices from Hyperliquid's public API · every market a leader touches is copyable (spot excluded) · paper only.<br>Snapshots: ${state.snapFiles.join(', ')}${state.live.syncErr ? ` · ${state.live.syncErr} trader(s) failed to sync this load` : ''}.`;
 }
-window.COPY = { state, replay: C_replay, score: C_score, desc: C_desc, bench: C_bench, exportFills() { const o = {}; for (const [a, arr] of state.fills) if (arr.length) o[a] = arr; return JSON.stringify(o); } };
+window.COPY = { state, replay: C_replay, score: C_score, desc: C_desc, bench: C_bench, fillCount() { let n = 0; for (const arr of state.fills.values()) n += arr.length; return n; }, exportFills() { const o = {}; for (const [a, arr] of state.fills) if (arr.length) o[a] = arr; return JSON.stringify(o); } };
 
 /* ---------- real-time: Hyperliquid WebSocket userFills push for every roster address ---------- */
 const WS = { sock: null, pending: 0, timer: null, ping: null, lastMsg: 0, retries: 0, snap: null,
