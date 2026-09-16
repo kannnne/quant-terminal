@@ -175,12 +175,12 @@
     <a class="tab-btn" href="rekt.html">REKT Lab<span class="mini">Page 3 · 100 desks</span></a>
   </div>
   <div class="banner" id="errBanner"></div>
-  <div id="app" class="loading">Loading snapshot history and live Binance derivatives data…</div>
+  <div id="app" class="loading">Loading snapshot history and live OKX derivatives data…</div>
 </main></div>
 
 <template id="tpl">
   <div class="chips">
-    <div class="chip" style="--c:var(--blue)"><div class="ring">₿</div><div><div class="k">BTC / USDT · Binance</div><div class="v" id="cPrice">–</div><div class="d" id="cPriceD">–</div></div></div>
+    <div class="chip" style="--c:var(--blue)"><div class="ring">₿</div><div><div class="k">BTC / USDT · OKX</div><div class="v" id="cPrice">–</div><div class="d" id="cPriceD">–</div></div></div>
     <div class="chip" style="--c:var(--gold)"><div class="ring">⚖</div><div><div class="k">Crowding</div><div class="v" id="cCrowd">–</div><div class="d" id="cCrowdD">funding × long/short ratio</div></div></div>
     <div class="chip" style="--c:var(--teal)"><div class="ring">☺</div><div><div class="k">Sentiment</div><div class="v" id="cSent">–</div><div class="d" id="cSentD">fear &amp; greed × taker flow</div></div></div>
     <div class="chip" style="--c:var(--vio)"><div class="ring">⚔</div><div><div class="k">Signal Arena</div><div class="v" id="cArena" style="font-size:13px">–</div><div class="d" id="cArenaD">–</div></div></div>
@@ -193,7 +193,7 @@
   </div>
 
   <div class="card g-teal">
-    <h2>Signal Board <span class="tag">Binance USDT-M derivatives · alternative.me · CoinGecko · DefiLlama · Hyperliquid — all public, no keys</span>
+    <h2>Signal Board <span class="tag">OKX USDT perp derivatives · alternative.me · CoinGecko · DefiLlama · Hyperliquid — all public, no keys</span>
       <span class="legend"><span><i style="background:var(--green)"></i>bullish read</span><span><i style="background:var(--red)"></i>bearish read</span><span><i style="background:var(--gold)"></i>30-day percentile</span></span></h2>
     <div class="sgrid" id="sgrid"></div>
     <div style="font-size:10.5px;color:var(--muted);margin-top:10px" id="sgridNote">–</div>
@@ -271,51 +271,95 @@ async function loadSnapshots() {
   state.snapFiles = found;
   return merged;
 }
+/* ===== v1.5 · derivatives from OKX instead of Binance (Binance returns 451 to US IPs, which is where the
+   GitHub snapshot runner lives; OKX's public v5 endpoints answer US IPs, no key, same series).
+   Shapes are kept IDENTICAL to what the rest of the page expects:
+     merged.oi      [ts, oiBTC, oiUSD_millions]
+     merged.ls      [ts, longShortAccountRatio]          (all accounts)
+     merged.top     [ts, longShortPositionRatio]         (top traders, by position)
+     merged.tk      [ts, takerBuy/takerSell]
+     merged.funding [ts, fundingRate]                    (8h settle)
+     state.bars     [ts, o, h, l, c]                      (1h)
+     live.prem      { lastFundingRate, markPrice, indexPrice, nextFundingRate }
+   OKX contract-level rubik endpoints return newest-first, max 100 rows, paged with `end` (ms). ===== */
+const OKX = 'https://www.okx.com/api/v5';
+const OKX_INST = 'BTC-USDT-SWAP';
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function okxJSON(path) {
+  const r = await fetch(OKX + path, { cache: 'no-store' });
+  if (!r.ok) throw new Error(path.split('?')[0].split('/').slice(-1)[0] + ' ' + r.status);
+  const j = await r.json();
+  if (j.code !== '0') throw new Error(path.split('?')[0].split('/').slice(-1)[0] + ' code ' + j.code + ' ' + (j.msg || ''));
+  return j.data || [];
+}
+/* page a newest-first hourly series back to `from` (ms). `end` = exclusive upper bound. */
+async function okxSeries(path, from, map, fn, maxPages = 12) {
+  let end = Date.now();
+  for (let i = 0; i < maxPages; i++) {
+    const rows = await okxJSON(`${path}&limit=100&end=${end}`);
+    if (!rows.length) break;
+    for (const x of rows) { const ts = +x[0]; if (ts >= from) map.set(ts, fn(x, ts)); }
+    const oldest = Math.min(...rows.map(x => +x[0]));
+    if (oldest <= from || rows.length < 100) break;
+    end = oldest - 1;
+    await sleep(120);   // OKX public limit ≈ 20 req / 2 s per IP
+  }
+}
 async function loadLive(merged) {
-  const base = 'https://fapi.binance.com/futures/data/';
-  const q = 'symbol=BTCUSDT&period=1h&limit=500';
-  const pull = async (path, map, fn) => {
-    let end = Date.now();
-    for (let i = 0; i < 2; i++) {
-      const r = await getJSON(`${base}${path}?${q}&endTime=${end}`);
-      if (!r.length) break;
-      for (const x of r) map.set(x.timestamp, fn(x));
-      end = r[0].timestamp - 1;
-      if (r.length < 500) break;
-    }
-  };
-  /* v1.2: Binance is geo-blocked from some networks (e.g. US-hosted runners that take the hourly snapshot). If it cannot be
-     reached, the derivatives series fall back to the weekly snapshot files (stale but real) and the price to Hyperliquid's
-     BTC 1h candles; the page then shows a warning banner so nobody mistakes a stale read for a live one. */
-  let binanceErr = null;
+  const SERIES_FROM = Date.now() - 45 * DAY;   // rubik hourly series: 45 days is plenty for the 30-day percentile windows
+  let okxErr = null;
   try {
-    await pull('openInterestHist', merged.oi, x => [x.timestamp, Math.round(+x.sumOpenInterest), Math.round(+x.sumOpenInterestValue / 1e6)]);
-    await pull('globalLongShortAccountRatio', merged.ls, x => [x.timestamp, +x.longShortRatio]);
-    await pull('topLongShortPositionRatio', merged.top, x => [x.timestamp, +x.longShortRatio]);
-    await pull('takerlongshortRatio', merged.tk, x => [x.timestamp, +x.buySellRatio]);
-    const fr = await getJSON(`https://fapi.binance.com/fapi/v1/fundingRate?symbol=BTCUSDT&limit=1000&startTime=${PRICE_FROM}`);
-    for (const x of fr) merged.funding.set(x.fundingTime, [x.fundingTime, +x.fundingRate]);
-  } catch (e) { binanceErr = e.message || String(e); if (!merged.oi.size || !merged.funding.size) throw new Error('Binance unreachable (' + binanceErr + ') and no snapshot history'); }
+    // open interest (contracts, BTC, USD) → [ts, BTC, USD millions]
+    await okxSeries(`/rubik/stat/contracts/open-interest-history?instId=${OKX_INST}&period=1H`, SERIES_FROM, merged.oi,
+      x => [+x[0], Math.round(+x[2]), Math.round(+x[3] / 1e6)]);
+    // all-account long/short ratio (ccy-level endpoint; supports begin/end, returns up to ~30 days)
+    {
+      const rows = await okxJSON(`/rubik/stat/contracts/long-short-account-ratio?ccy=BTC&period=1H&begin=${SERIES_FROM}`);
+      for (const x of rows) merged.ls.set(+x[0], [+x[0], +x[1]]);
+    }
+    // top-trader POSITION ratio (same meaning as Binance topLongShortPositionRatio)
+    await okxSeries(`/rubik/stat/contracts/long-short-position-ratio-contract-top-trader?instId=${OKX_INST}&period=1H`, SERIES_FROM, merged.top,
+      x => [+x[0], +x[1]]);
+    // taker volume [ts, sellVol, buyVol] → buy/sell ratio
+    await okxSeries(`/rubik/stat/taker-volume-contract?instId=${OKX_INST}&period=1H`, SERIES_FROM, merged.tk,
+      x => [+x[0], +x[1] > 0 ? +x[2] / +x[1] : 1]);
+    // funding history (8h), newest-first, 100 per page, paged with `after` = oldest fundingTime
+    {
+      let after = '';
+      for (let i = 0; i < 12; i++) {
+        const rows = await okxJSON(`/public/funding-rate-history?instId=${OKX_INST}&limit=100${after ? '&after=' + after : ''}`);
+        if (!rows.length) break;
+        for (const x of rows) { const ts = +x.fundingTime; if (ts >= PRICE_FROM) merged.funding.set(ts, [ts, +(x.realizedRate || x.fundingRate)]); }
+        const oldest = Math.min(...rows.map(x => +x.fundingTime));
+        if (oldest <= PRICE_FROM || rows.length < 100) break;
+        after = String(oldest);
+        await sleep(120);
+      }
+    }
+  } catch (e) { okxErr = e.message || String(e); if (!merged.oi.size || !merged.funding.size) throw new Error('OKX unreachable (' + okxErr + ') and no snapshot history'); }
   try { const f = await getJSON('https://api.alternative.me/fng/?limit=60'); for (const x of f.data) merged.fng.set(+x.timestamp * 1000, [+x.timestamp * 1000, +x.value]); } catch (e) {}
   const series = {};
   for (const k of Object.keys(merged)) series[k] = [...merged[k].values()].sort((a, b) => a[0] - b[0]);
   state.series = series;
-  // price: Binance 1h, else Hyperliquid 1h (same candle grid, close-to-close differences are basis points)
-  let rows = [], t = PRICE_FROM, priceSrc = 'Binance';
+
+  // price: OKX 1h candles (newest-first, 100 per page, paged with `after`), else Hyperliquid 1h
+  let rows = [], priceSrc = 'OKX';
   try {
-    for (let i = 0; i < 6; i++) {
-      const r = await getJSON(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&startTime=${t}&limit=1000`);
+    const byTs = new Map();
+    let after = '';
+    for (let i = 0; i < 40; i++) {
+      const r = await okxJSON(`/market/history-candles?instId=${OKX_INST}&bar=1H&limit=100${after ? '&after=' + after : ''}`);
       if (!r.length) break;
-      for (const k of r) rows.push([k[0], +k[1], +k[2], +k[3], +k[4]]);
-      if (r.length < 1000) break;
-      t = r[r.length - 1][6] + 1;
+      for (const k of r) { const ts = +k[0]; if (ts >= PRICE_FROM) byTs.set(ts, [ts, +k[1], +k[2], +k[3], +k[4]]); }
+      const oldest = Math.min(...r.map(k => +k[0]));
+      if (oldest <= PRICE_FROM || r.length < 100) break;
+      after = String(oldest);
+      await sleep(120);
     }
+    rows = [...byTs.values()].sort((a, b) => a[0] - b[0]);
+    if (!rows.length) throw new Error('OKX candles empty');
   } catch (e) {
-    rows = []; t = PRICE_FROM; priceSrc = 'Hyperliquid';
-    /* v1.2.2: Hyperliquid answers candleSnapshot with [] or an error object when the caller is being rate-limited.
-       The snapshot runner loads Copy Desk (100 leader addresses) just before this page, which used up the IP's
-       Hyperliquid budget, so short retries all landed inside the same 1-minute window (2026-09-07 04:54 + 07:58).
-       Back off past that window, and report the real status/body instead of a bare "empty". */
+    rows = []; let t = PRICE_FROM; priceSrc = 'Hyperliquid';
     const hlBars = async start => { let why = 'empty';
       for (let a = 0; a < 3; a++) {
         try { const res = await fetch('https://api.hyperliquid.xyz/info', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'candleSnapshot', req: { coin: 'BTC', interval: '1h', startTime: start, endTime: Date.now() } }) });
@@ -333,17 +377,26 @@ async function loadLive(merged) {
       if (r.length < 5000) break;
       t = r[r.length - 1].t + H1;
     }
-    if (!rows.length) throw new Error('no price history (Binance: ' + e.message + '; Hyperliquid empty)');
+    if (!rows.length) throw new Error('no price history (OKX: ' + e.message + '; Hyperliquid empty)');
   }
   if (rows.length && rows[rows.length - 1][0] + H1 > Date.now()) rows.pop();   // drop the still-forming candle
   state.bars = rows;
-  state.degraded = binanceErr ? { binanceErr, priceSrc, derivEnd: Math.max(...['oi', 'ls', 'top', 'tk'].map(k => series[k].length ? series[k][series[k].length - 1][0] : 0)) } : null;
+  state.degraded = okxErr ? { binanceErr: 'OKX: ' + okxErr, priceSrc, derivEnd: Math.max(...['oi', 'ls', 'top', 'tk'].map(k => series[k].length ? series[k][series[k].length - 1][0] : 0)) } : null;
+
   // live-only extras (no history, report cards only)
   const live = {};
   const tryGet = async (k, fn) => { try { live[k] = await fn(); } catch (e) { live[k] = null; } };
   await Promise.all([
-    tryGet('ticker', () => getJSON('https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT')),
-    tryGet('prem', () => getJSON('https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT')),
+    tryGet('ticker', () => okxJSON(`/market/ticker?instId=${OKX_INST}`).then(d => d[0])),
+    tryGet('prem', async () => {
+      const [fr, mk, ix] = await Promise.all([
+        okxJSON(`/public/funding-rate?instId=${OKX_INST}`).then(d => d[0]),
+        okxJSON(`/public/mark-price?instType=SWAP&instId=${OKX_INST}`).then(d => d[0]),
+        okxJSON(`/market/index-tickers?instId=BTC-USDT`).then(d => d[0]),
+      ]);
+      // nextFundingRate is only published inside the last hour before settlement on OKX; fall back to current rate
+      return { lastFundingRate: +(fr.nextFundingRate || fr.fundingRate), currentFundingRate: +fr.fundingRate, premium: +fr.premium, markPrice: +mk.markPx, indexPrice: +ix.idxPx, nextFundingTime: +fr.nextFundingTime };
+    }),
     tryGet('hl', () => fetch('https://api.hyperliquid.xyz/info', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'metaAndAssetCtxs' }) }).then(r => r.json())),
     tryGet('cg', () => getJSON('https://api.coingecko.com/api/v3/global')),
     tryGet('trend', () => getJSON('https://api.coingecko.com/api/v3/search/trending')),
@@ -564,13 +617,13 @@ function renderBoard() {
   const tail = (x, k = 168) => Array.from(x.slice(Math.max(0, x.length - k)));
   const cards = [];
   const fund = last(s.funding)[1], fundP = pctLast(f.fund), fundAnn = fund * 3 * 365 * 100;
-  cards.push({ name: 'Funding rate', src: 'Binance perp · 8h', val: (fund * 100).toFixed(4) + '%', unit: `${fundAnn >= 0 ? '+' : ''}${fundAnn.toFixed(0)}% ann.`, pct: fundP, tone: fundP >= 90 ? -1 : fundP <= 10 ? 1 : 0,
+  cards.push({ name: 'Funding rate', src: 'OKX perp · 8h', val: (fund * 100).toFixed(4) + '%', unit: `${fundAnn >= 0 ? '+' : ''}${fundAnn.toFixed(0)}% ann.`, pct: fundP, tone: fundP >= 90 ? -1 : fundP <= 10 ? 1 : 0,
     read: fundP >= 90 ? `Longs paying up · <em>${fundP.toFixed(0)}th pct</em> of 30d — crowded long` : fundP <= 10 ? `Shorts paying · <em>${fundP.toFixed(0)}th pct</em> — crowded short` : `Neutral carry · ${fundP.toFixed(0)}th pct of 30d`, spark: spark(tail(f.fund, 240), '#c9d64f') });
   if (lv.prem) { const pr = +lv.prem.lastFundingRate, basis = (+lv.prem.markPrice / +lv.prem.indexPrice - 1) * 100;
-    cards.push({ name: 'Predicted funding', src: 'Binance · next settle', val: (pr * 100).toFixed(4) + '%', unit: `basis ${basis >= 0 ? '+' : ''}${basis.toFixed(3)}%`, pct: NaN, tone: pr > 0.0003 ? -1 : pr < -0.0001 ? 1 : 0, live: true,
+    cards.push({ name: 'Predicted funding', src: 'OKX · next settle', val: (pr * 100).toFixed(4) + '%', unit: `basis ${basis >= 0 ? '+' : ''}${basis.toFixed(3)}%`, pct: NaN, tone: pr > 0.0003 ? -1 : pr < -0.0001 ? 1 : 0, live: true,
       read: pr > 0.0003 ? 'Premium building — perps trading above index' : pr < -0.0001 ? 'Discount — perps below index, shorts paying' : 'Mark ≈ index, no premium pressure' }); }
   const oiC = last(s.oi)[1], oiU = last(s.oi)[2], oi24 = featN('oiChg', 24)[n - 1], oiZ = f.oiZ[168][n - 1];
-  cards.push({ name: 'Open interest', src: 'Binance USDT-M', val: '$' + fmtN(oiU / 1000, 2) + 'B', unit: fmtN(oiC) + ' BTC', pct: pctLast(f.oi), tone: 0,
+  cards.push({ name: 'Open interest', src: 'OKX BTC-USDT-SWAP', val: '$' + fmtN(oiU / 1000, 2) + 'B', unit: fmtN(oiC) + ' BTC', pct: pctLast(f.oi), tone: 0,
     read: `24h ${oi24 >= 0 ? '+' : ''}${fmtN(oi24, 1)}% · 7d z-score ${oiZ >= 0 ? '+' : ''}${fmtN(oiZ, 2)} — ${Math.abs(oiZ) >= 2 ? '<em>extreme leverage build-up</em>' : oi24 <= -4 ? '<em>deleveraging</em>' : 'normal'}`, spark: spark(tail(f.oi), '#8ad6b0') });
   const ls = last(s.ls)[1], lsP = pctLast(f.ls);
   cards.push({ name: 'Retail long/short', src: 'all accounts · ratio', val: ls.toFixed(2), unit: `${(ls / (1 + ls) * 100).toFixed(0)}% long`, pct: lsP, tone: lsP >= 90 ? -1 : lsP <= 10 ? 1 : 0,
@@ -585,7 +638,7 @@ function renderBoard() {
   cards.push({ name: 'Fear & Greed', src: 'alternative.me · daily', val: String(fg), unit: fgLbl, pct: fg, tone: fg >= 75 ? -1 : fg <= 25 ? 1 : 0,
     read: fg >= 75 ? '<em>Extreme greed</em> — historically a poor entry zone' : fg <= 25 ? '<em>Extreme fear</em> — historically a strong accumulation zone' : `${fgLbl} · no edge from sentiment alone`, spark: spark(s.fng.slice(-60).map(x => x[1]), '#c9d64f') });
   if (lv.hl) { try { const i = lv.hl[0].universe.findIndex(u => u.name === 'BTC'); const hf = +lv.hl[1][i].funding, hAnn = hf * 24 * 365 * 100, bAnn = fund / 8 * 24 * 365 * 100;
-    cards.push({ name: 'Cross-venue funding', src: 'Hyperliquid vs Binance', val: `${hAnn >= 0 ? '+' : ''}${hAnn.toFixed(0)}%`, unit: `vs ${bAnn >= 0 ? '+' : ''}${bAnn.toFixed(0)}% ann.`, pct: NaN, tone: 0, live: true,
+    cards.push({ name: 'Cross-venue funding', src: 'Hyperliquid vs OKX', val: `${hAnn >= 0 ? '+' : ''}${hAnn.toFixed(0)}%`, unit: `vs ${bAnn >= 0 ? '+' : ''}${bAnn.toFixed(0)}% ann.`, pct: NaN, tone: 0, live: true,
       read: Math.abs(hAnn - bAnn) >= 10 ? `<em>${Math.abs(hAnn - bAnn).toFixed(0)}% ann. spread</em> — carry-arb window between venues` : 'Venues agree — no funding arbitrage' }); } catch (e) {} }
   if (lv.cg && lv.cg.data) { const d = lv.cg.data, dom = d.market_cap_percentage.btc, chg = d.market_cap_change_percentage_24h_usd, tot = d.total_market_cap.usd / 1e12;
     cards.push({ name: 'Total crypto cap', src: 'CoinGecko · live', val: '$' + tot.toFixed(2) + 'T', unit: `${chg >= 0 ? '+' : ''}${chg.toFixed(2)}% 24h`, pct: NaN, tone: chg >= 2 ? 1 : chg <= -2 ? -1 : 0, live: true,
@@ -748,7 +801,7 @@ function renderAll() {
   renderBoard(); try { renderAttention(); } catch (e) { const el = $('attnNote'); if (el) el.textContent = 'Attention board failed: ' + e.message; }
   const aw = $('attnWin'); if (aw && !aw.dataset.bound) { aw.dataset.bound = '1'; aw.addEventListener('click', e => { const b = e.target.closest('button[data-w]'); if (!b) return; state.attnWin = +b.dataset.w; try { renderAttention(); } catch (err) {} }); }
   renderArena();
-  $('foot').innerHTML = `Signal Desk v1.4 · seed ${SIG_SEED} · ${S_KEYS.length} signal species + signal∧trend combos · ${S_SEATS} seats, ${S_BENCH}-bot bench · weekly evolution on Monday 00:00 UTC · paper only, no keys, no real funds.<br>Snapshots loaded: ${state.snapFiles.join(', ') || 'none'} · Binance keeps derivatives series for 30 days only, so history is preserved in weekly snapshot files inside the repo.`;
+  $('foot').innerHTML = `Signal Desk v1.5 · seed ${SIG_SEED} · ${S_KEYS.length} signal species + signal∧trend combos · ${S_SEATS} seats, ${S_BENCH}-bot bench · weekly evolution on Monday 00:00 UTC · paper only, no keys, no real funds.<br>Snapshots loaded: ${state.snapFiles.join(', ') || 'none'} · OKX keeps hourly derivatives series for about 30 days only, so history is preserved in weekly snapshot files inside the repo.`;
 }
 /* ---------- snapshot export (weekly: copies a compact JSON of the merged series to the clipboard) ---------- */
 window.SIG = { state, exportSnapshot() { const s = state.series; const c = { symbol: 'BTCUSDT', taken: Date.now(), period: '1h', oi: s.oi, ls: s.ls, top: s.top, tk: s.tk, funding: s.funding, fng: s.fng }; return JSON.stringify(c); }, replay: S_replay, score: S_score, pos: S_pos, blocks: S_BLOCKS };
@@ -758,14 +811,14 @@ async function boot() {
   try {
     txt.textContent = 'Loading snapshots…';
     const merged = await loadSnapshots();
-    txt.textContent = 'Loading live Binance data…';
+    txt.textContent = 'Loading live OKX data…';
     await loadLive(merged);
     buildFeatures();
     txt.textContent = 'Replaying 50-bot arena…';
     state.arena = S_replay();
     renderAll();
     const b = $('errBanner');
-    if (state.degraded) { b.className = 'banner warn'; b.textContent = `Binance unreachable from this network (${state.degraded.binanceErr}). Derivatives series end at ${new Date(state.degraded.derivEnd).toISOString().replace('T', ' ').slice(0, 16)} UTC (last weekly snapshot); price from ${state.degraded.priceSrc}. Cards, gauges and the signal bots are computed on that stale data — treat this view as degraded.`; }
+    if (state.degraded) { b.className = 'banner warn'; b.textContent = `Derivatives source unreachable from this network (${state.degraded.binanceErr}). Derivatives series end at ${new Date(state.degraded.derivEnd).toISOString().replace('T', ' ').slice(0, 16)} UTC (last weekly snapshot); price from ${state.degraded.priceSrc}. Cards, gauges and the signal bots are computed on that stale data — treat this view as degraded.`; }
     else { b.className = 'banner'; b.textContent = ''; }
     dot.className = 'dot ok'; txt.textContent = (state.degraded ? 'Degraded · ' : 'Live · ') + new Date().toISOString().slice(11, 19) + ' UTC';
   } catch (e) {
