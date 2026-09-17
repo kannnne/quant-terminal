@@ -1,8 +1,8 @@
-# .github/workflows/market-snapshot.yml — 每個鐘攞一次「多空分布」數據，寫入 data/live/market.json
+# .github/workflows/market-snapshot.yml — 每 15 分鐘攞一次「多空分布」數據，寫入 data/live/market.json
 name: market-snapshot
 on:
   schedule:
-    - cron: '7 * * * *'      # 每個鐘 :07（GitHub 會間中跳過，2–4 個鐘冇跑係正常）
+    - cron: '7,22,37,52 * * * *'   # 每 15 分鐘（Kane 2026-09-17 要求；GitHub 會間中跳過，實際大約每 30–60 分鐘跑到一次）
   workflow_dispatch:
 permissions:
   contents: write
